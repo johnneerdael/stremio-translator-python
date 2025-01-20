@@ -102,13 +102,17 @@ class SubtitleProcessor:
                     except:
                         pass
 
+                # Filter out foreign parts only subtitles unless that's all we have
+                normal_subs = [s for s in data['data'] if not s.get('attributes', {}).get('foreign_parts_only', False)]
+                subtitles = normal_subs if normal_subs else data['data']
+
                 # Find best matching subtitle
                 best_subtitle = None
                 best_match_ratio = 0
 
                 print("Comparing subtitles for video:", video_filename or "Using embedded English subtitles")
                 
-                for subtitle in data['data']:
+                for subtitle in subtitles:
                     # Get subtitle filename
                     sub_filename = subtitle.get('attributes', {}).get('release', '') or subtitle.get('attributes', {}).get('files', [{}])[0].get('file_name', '')
                     
@@ -121,6 +125,7 @@ class SubtitleProcessor:
                         ratio = SequenceMatcher(None, clean_video, clean_sub).ratio()
                         print(f"Subtitle: {sub_filename}")
                         print(f"Similarity: {ratio * 100:.2f}%")
+                        print(f"Foreign parts only: {subtitle.get('attributes', {}).get('foreign_parts_only', False)}")
                         
                         # Update best match if this is better
                         if ratio > best_match_ratio:
@@ -129,7 +134,7 @@ class SubtitleProcessor:
 
                 if not best_subtitle:
                     # If no filename matches, use the most downloaded subtitle
-                    best_subtitle = max(data['data'], key=lambda s: s.get('attributes', {}).get('download_count', 0))
+                    best_subtitle = max(subtitles, key=lambda s: s.get('attributes', {}).get('download_count', 0))
                     print(f"No filename match found, using most downloaded subtitle")
 
                 # Get file ID for download
@@ -187,7 +192,7 @@ class SubtitleProcessor:
                 # Parse timecode
                 times = parts[1].split(' --> ')
                 start_time, end_time = [self.parse_timecode(t) for t in times]
-                start_ms = start_time.total_seconds() * 1000
+                start_ms = int(start_time.total_seconds() * 1000)
                 
                 # Get text
                 text = '\n'.join(parts[2:]).strip()
@@ -200,12 +205,12 @@ class SubtitleProcessor:
         return sorted(entries, key=lambda x: x.start)
 
     def parse_timecode(self, timecode):
-        """Parse timecode string into datetime"""
+        """Parse timecode string into timedelta"""
         parts = timecode.split(':')
         hours = int(parts[0])
         minutes = int(parts[1])
         seconds, milliseconds = [int(p) for p in parts[2].split(',')]
-        return datetime(1, 1, 1, hours, minutes, seconds, milliseconds * 1000)
+        return timedelta(hours=hours, minutes=minutes, seconds=seconds, milliseconds=milliseconds)
 
     def prioritize_subtitles(self, entries: List[SubtitleEntry]) -> List[List[SubtitleEntry]]:
         """Split subtitles into priority batches"""
