@@ -28,42 +28,53 @@ class TranslationManager:
             return self._translation_cache[cache_key]
 
         async with self._lock:
-            # Check rate limits
-            now = datetime.now()
-            if (now - self._last_request_time) > timedelta(minutes=1):
-                self._request_count = 0
-                self._last_request_time = now
-            elif self._request_count >= self.requests_per_minute:
-                # Wait until next minute if rate limit reached
-                wait_time = 60 - (now - self._last_request_time).seconds
-                if wait_time > 0:
-                    await asyncio.sleep(wait_time)
-                self._request_count = 0
-                self._last_request_time = datetime.now()
+            try:
+                # Check rate limits
+                now = datetime.now()
+                if (now - self._last_request_time) > timedelta(minutes=1):
+                    self._request_count = 0
+                    self._last_request_time = now
+                elif self._request_count >= self.requests_per_minute:
+                    # Wait until next minute if rate limit reached
+                    wait_time = 60 - (now - self._last_request_time).seconds
+                    if wait_time > 0:
+                        await asyncio.sleep(wait_time)
+                    self._request_count = 0
+                    self._last_request_time = datetime.now()
 
-            # Translate with retry logic
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    prompt = self._create_translation_prompt(text)
-                    response = await self.model.generate_content_async(prompt)
-                    translation = response.text.strip()
-                    
-                    # Cache the result
-                    self._translation_cache[cache_key] = translation
-                    self._request_count += 1
-                    
-                    return translation
-                except Exception as e:
-                    if attempt == max_retries - 1:
-                        raise
-                    await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
+                # Translate with retry logic
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        prompt = self._create_translation_prompt(text)
+                        response = await self.model.generate_content_async(prompt)
+                        if not response or not response.text:
+                            raise Exception("Empty response from Gemini API")
+                        
+                        translation = response.text.strip()
+                        if not translation:
+                            raise Exception("Empty translation")
+                        
+                        # Cache the result
+                        self._translation_cache[cache_key] = translation
+                        self._request_count += 1
+                        
+                        return translation
+                    except Exception as e:
+                        print(f"Translation error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                        if attempt == max_retries - 1:
+                            raise
+                        await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
+            except Exception as e:
+                print(f"Translation failed: {str(e)}")
+                # Return original text if translation fails
+                return text
 
     def _create_translation_prompt(self, text: str) -> str:
         """Create a prompt for translation"""
         return (
             f"Translate the following text to {self.target_lang}. "
-            f"Maintain any formatting. Only respond with the translation, no explanations:\n\n{text}"
+            f"Only respond with the translation, no explanations or additional text:\n\n{text}"
         )
 
     async def translate_batch(self, texts: list[str]) -> list[str]:
