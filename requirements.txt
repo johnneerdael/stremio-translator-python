@@ -3,4 +3,4 @@ aiohttp
 jinja2
 uvicorn
 pydantic
-stremio-opensubtitles==0.16.2
+python-opensubtitles

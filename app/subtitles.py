@@ -4,6 +4,8 @@ from typing import List, Dict, Optional
 from pathlib import Path
 import asyncio
 from datetime import datetime, timedelta
+from pythonopensubtitles import OpenSubtitles
+from pythonopensubtitles.utils import File
 
 class SubtitleEntry:
     def __init__(self, start: int, text: str):
@@ -19,7 +21,6 @@ class SubtitleEntry:
 
 class SubtitleProcessor:
     def __init__(self):
-        self.stremio_proxy = "https://v3-cinemeta.strem.io"
         self.opensubtitles = OpenSubtitles()
         self.batch_size = 15  # Free tier: 15 requests per second
         self.window_size = 60  # 1 minute window
@@ -30,35 +31,28 @@ class SubtitleProcessor:
     async def fetch_subtitles(self, type: str, id: str) -> List[SubtitleEntry]:
         """Fetch subtitles from OpenSubtitles"""
         try:
-            # First try to get the subtitle list from Cinemeta
-            list_url = f"{self.stremio_proxy}/meta/{type}/{id}.json"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(list_url) as response:
-                    if response.status != 200:
-                        raise Exception(f"Failed to fetch metadata: {response.status}")
-                    
-                    meta = await response.json()
-                    if not meta.get('meta'):
-                        raise Exception("No metadata found")
-                    
-                    # Get English subtitles URL from meta
-                    sub_url = None
-                    for sub in meta['meta'].get('subtitles', []):
-                        if sub.get('lang') == 'eng' or sub.get('lang') == 'en':
-                            sub_url = sub.get('url')
-                            break
-                    
-                    if not sub_url:
-                        raise Exception("No English subtitles found")
-                    
-                    # Fetch subtitles from OpenSubtitles
-                    subtitles = await self.opensubtitles.get_video_subtitles(type, id)
-                    entries = []
-                    for subtitle in subtitles:
-                        for track in subtitle.tracks:
-                            if track.language == 'en':
-                                entries.extend(self.parse_srt(track.contents))
+            # Login to OpenSubtitles (required)
+            self.opensubtitles.login()
+            
+            # Search for subtitles
+            subtitles = self.opensubtitles.search_subtitles([{
+                'sublanguageid': 'eng',
+                'idmovie': id,
+                'type': type
+            }])
+            
+            # Download the first matching subtitle
+            if subtitles:
+                subtitle_id = subtitles[0]['IDSubtitleFile']
+                subtitle_path = self.opensubtitles.download_subtitles([subtitle_id], extension='srt')
+                
+                # Parse the downloaded SRT file
+                with open(subtitle_path[0], 'r', encoding='utf-8') as f:
+                    srt_content = f.read()
+                    entries = self.parse_srt(srt_content)
                     return entries
+            else:
+                raise Exception("No subtitles found")
                         
         except Exception as e:
             print(f"Error fetching subtitles: {str(e)}")
