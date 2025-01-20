@@ -134,14 +134,14 @@
                     const settings = getSettings();
                     const settingsString = base64UrlEncode(JSON.stringify(settings));
                     const domain = window.location.host;
-                    window.location.href = `stremio://${domain}/${settingsString}/manifest.json`;
+                    window.location.href = `stremio://aitranslator.thepi.es/manifest.json`;
                     document.getElementById('installAlert').toast();
                 });
 
                 document.getElementById('copy-link').addEventListener('click', () => {
                     const settings = getSettings();
                     const settingsString = base64UrlEncode(JSON.stringify(settings));
-                    const link = `${window.location.origin}/${settingsString}/manifest.json`;
+                    const link = `${window.location.origin}/manifest.json`;
                     
                     navigator.clipboard.writeText(link).then(() => {
                         document.getElementById('copyAlert').toast();
