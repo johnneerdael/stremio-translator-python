@@ -91,6 +91,14 @@
                 <sl-input id="geminiApiKey" type="password" label="Google Gemini API Key" value="{{ config.key }}" placeholder="Enter your API key"></sl-input>
             </div>
 
+            <div class="form-item">
+                <sl-input id="osUsername" type="text" label="OpenSubtitles Username" value="{{ config.username }}" placeholder="Enter your OpenSubtitles username"></sl-input>
+            </div>
+
+            <div class="form-item">
+                <sl-input id="osPassword" type="password" label="OpenSubtitles Password" value="{{ config.password }}" placeholder="Enter your OpenSubtitles password"></sl-input>
+            </div>
+
             <div class="centered-item">
                 <sl-button id="install" variant="primary">Install Addon</sl-button>
             </div>
@@ -107,13 +115,15 @@
                 function getSettings() {
                     const key = document.getElementById('geminiApiKey').value;
                     const lang = document.getElementById('translateTo').value;
+                    const username = document.getElementById('osUsername').value;
+                    const password = document.getElementById('osPassword').value;
                     
-                    if (!key || !lang) {
-                        alert('Please enter both API key and language');
+                    if (!key || !lang || !username || !password) {
+                        alert('Please fill in all fields');
                         return null;
                     }
                     
-                    return { key, lang };
+                    return { key, lang, username, password };
                 }
 
                 document.getElementById('install').addEventListener('click', () => {

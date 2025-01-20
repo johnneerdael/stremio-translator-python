@@ -1,0 +1,20 @@
+1
+00:00:00,000 --> 00:00:05,000
+Loading subtitles...
+Please wait while we fetch and translate the subtitles.
+
+2
+00:00:05,000 --> 00:00:10,000
+This may take a few moments.
+The subtitles will appear automatically when ready.
+
+3
+00:00:10,000 --> 00:00:15,000
+If this message persists, please check:
+1. Your OpenSubtitles credentials
+2. Your internet connection
+
+4
+00:00:15,000 --> 00:00:20,000
+Still loading...
+Thank you for your patience.

@@ -34,7 +34,7 @@ def get_base_url():
     return f"{protocol}://{domain}"
 
 # Manifest definition
-def get_manifest(base_url: str, config_b64: Optional[str] = None):
+def get_manifest(base_url: str):
     domain = base_url.replace("https://", "").replace("http://", "")
     manifest = {
         "id": "org.stremio.aitranslator",
@@ -47,18 +47,15 @@ def get_manifest(base_url: str, config_b64: Optional[str] = None):
         "catalogs": [],
         "logo": f"{base_url}/assets/logo.png",
         "background": f"{base_url}/assets/wallpaper.png",
-        "contactEmail": "johninNL@gmail.com"
+        "contactEmail": "john@neerdael.nl"
     }
-    
-    # Add transportUrl if config is provided
-    if config_b64:
-        manifest["transportUrl"] = f"http://{domain}/{config_b64}/manifest.json"
-    
     return manifest
 
 class Config(BaseModel):
     key: Optional[str] = None
     lang: Optional[str] = None
+    username: Optional[str] = None  # OpenSubtitles username
+    password: Optional[str] = None  # OpenSubtitles password
 
 async def get_config(config_b64: Optional[str] = None) -> Config:
     """Get configuration from base64 or default values"""
@@ -126,7 +123,7 @@ async def configure_with_config(request: Request, config_b64: str):
 async def manifest(request: Request, config_b64: Optional[str] = None):
     """Manifest endpoint"""
     base_url = get_base_url()
-    manifest_data = get_manifest(base_url, config_b64)
+    manifest_data = get_manifest(base_url)
     return JSONResponse(manifest_data)
 
 @app.get("/{config_b64}/subtitles/{type}/{id}/{video_hash}.json")
@@ -147,9 +144,19 @@ async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
         
         if not config.lang:
             raise HTTPException(status_code=400, detail="Target language not configured")
+            
+        if not config.username or not config.password:
+            # Return loading subtitle if credentials not configured
+            return JSONResponse({
+                "subtitles": [{
+                    "id": "loading",
+                    "lang": config.lang,
+                    "url": f"{get_base_url()}/loading.srt"
+                }]
+            })
         
         # Initialize processors
-        subtitle_processor = SubtitleProcessor()
+        subtitle_processor = SubtitleProcessor(config.username, config.password)
         translation_manager = TranslationManager(config.key, config.lang)
         
         # Check cache
@@ -188,7 +195,11 @@ async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
         
         # Return current state of subtitles
         return JSONResponse({
-            "subtitles": [entry.to_dict() for entry in entries]
+            "subtitles": [{
+                "id": "translated",
+                "lang": config.lang,
+                "url": f"{get_base_url()}/subtitles/{type}/{id}/{video_hash}/translated.srt"
+            }]
         })
         
     except Exception as e:
