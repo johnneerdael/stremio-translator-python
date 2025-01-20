@@ -68,6 +68,37 @@
                 font-size: 0.875rem;
                 margin-top: 10px;
             }
+
+            .install-options {
+                margin-top: 20px;
+                padding: 15px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+            }
+
+            .install-option {
+                margin: 10px 0;
+            }
+
+            .install-option h3 {
+                color: #fff;
+                margin: 0 0 10px 0;
+            }
+
+            .button-group {
+                display: flex;
+                gap: 10px;
+                margin-top: 10px;
+            }
+
+            .url-display {
+                background: rgba(0, 0, 0, 0.2);
+                padding: 8px;
+                border-radius: 4px;
+                word-break: break-all;
+                margin: 10px 0;
+                font-family: monospace;
+            }
         </style>
     </head>
     <body>
@@ -99,8 +130,24 @@
                 <sl-input id="osAppName" type="text" label="OpenSubtitles App Name" value="{{ config.opensubtitles_app }}" placeholder="Enter your OpenSubtitles app name"></sl-input>
             </div>
 
-            <div class="centered-item">
-                <sl-button id="install" variant="primary">Install Addon</sl-button>
+            <div class="install-options">
+                <div class="install-option">
+                    <h3>Option 1: Direct Install</h3>
+                    <p>Click the button below to install the addon directly in Stremio:</p>
+                    <sl-button id="install" variant="primary">Install Addon</sl-button>
+                </div>
+
+                <div class="install-option">
+                    <h3>Option 2: Manual Install</h3>
+                    <p>Copy this URL and add it manually in Stremio:</p>
+                    <div id="manifestUrl" class="url-display"></div>
+                    <div class="button-group">
+                        <sl-button id="copyUrl" variant="default" size="small">
+                            <sl-icon slot="prefix" name="clipboard"></sl-icon>
+                            Copy URL
+                        </sl-button>
+                    </div>
+                </div>
             </div>
 
             <script>
@@ -108,7 +155,8 @@
                     await Promise.allSettled([
                         customElements.whenDefined('sl-button'),
                         customElements.whenDefined('sl-select'),
-                        customElements.whenDefined('sl-input')
+                        customElements.whenDefined('sl-input'),
+                        customElements.whenDefined('sl-icon')
                     ]);
                 });
 
@@ -126,7 +174,7 @@
                     return { key, lang, opensubtitles_key, opensubtitles_app };
                 }
 
-                document.getElementById('install').addEventListener('click', () => {
+                function updateManifestUrl() {
                     const settings = getSettings();
                     if (!settings) return;
                     
@@ -135,7 +183,38 @@
                         .replace(/\//g, '_')
                         .replace(/=+$/, '');
                     
-                    window.location.href = `stremio://${window.location.host}/${settingsString}/manifest.json`;
+                    const manifestUrl = `${window.location.protocol}//${window.location.host}/${settingsString}/manifest.json`;
+                    document.getElementById('manifestUrl').textContent = manifestUrl;
+                    return manifestUrl;
+                }
+
+                // Update manifest URL when any input changes
+                document.querySelectorAll('sl-input, sl-select').forEach(el => {
+                    el.addEventListener('sl-change', updateManifestUrl);
+                    el.addEventListener('sl-input', updateManifestUrl);
+                });
+
+                // Initial URL update
+                updateManifestUrl();
+
+                // Install button
+                document.getElementById('install').addEventListener('click', () => {
+                    const manifestUrl = updateManifestUrl();
+                    if (manifestUrl) {
+                        window.location.href = `stremio://${window.location.host}/${manifestUrl.split('/').pop()}`;
+                    }
+                });
+
+                // Copy URL button
+                document.getElementById('copyUrl').addEventListener('click', async () => {
+                    const manifestUrl = document.getElementById('manifestUrl').textContent;
+                    await navigator.clipboard.writeText(manifestUrl);
+                    
+                    const button = document.getElementById('copyUrl');
+                    button.innerHTML = '<sl-icon name="check-lg"></sl-icon> Copied!';
+                    setTimeout(() => {
+                        button.innerHTML = '<sl-icon slot="prefix" name="clipboard"></sl-icon> Copy URL';
+                    }, 2000);
                 });
             </script>
         </div>
