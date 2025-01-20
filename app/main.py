@@ -62,6 +62,7 @@ class Config(BaseModel):
     key: Optional[str] = None  # Gemini API key
     lang: Optional[str] = None
     opensubtitles_key: Optional[str] = None  # OpenSubtitles API key
+    opensubtitles_app: Optional[str] = None  # OpenSubtitles app name
 
 async def get_config(config_b64: Optional[str] = None) -> Config:
     """Get configuration from base64 or default values"""
@@ -171,7 +172,10 @@ async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
             })
         
         # Initialize processors
-        subtitle_processor = SubtitleProcessor(config.opensubtitles_key)
+        subtitle_processor = SubtitleProcessor(
+            api_key=config.opensubtitles_key,
+            app_name=config.opensubtitles_app or "Stremio AI Translator"
+        )
         translation_manager = TranslationManager(config.key, config.lang)
         
         # Check cache

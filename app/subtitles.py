@@ -18,8 +18,8 @@ class SubtitleEntry:
         }
 
 class SubtitleProcessor:
-    def __init__(self, api_key: str):
-        self.client = OpenSubtitles("Stremio AI Translator v1.6.3", api_key)
+    def __init__(self, api_key: str, app_name: str = "Stremio AI Translator"):
+        self.client = OpenSubtitles(app_name, api_key)
         self.batch_size = 15  # Free tier: 15 requests per second
         self.window_size = 60  # 1 minute window
         self.last_batch_time = datetime.now()

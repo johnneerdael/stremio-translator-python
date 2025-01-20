@@ -95,6 +95,10 @@
                 <sl-input id="osApiKey" type="password" label="OpenSubtitles API Key" value="{{ config.opensubtitles_key }}" placeholder="Enter your OpenSubtitles API key"></sl-input>
             </div>
 
+            <div class="form-item">
+                <sl-input id="osAppName" type="text" label="OpenSubtitles App Name" value="{{ config.opensubtitles_app }}" placeholder="Enter your OpenSubtitles app name"></sl-input>
+            </div>
+
             <div class="centered-item">
                 <sl-button id="install" variant="primary">Install Addon</sl-button>
             </div>
@@ -112,13 +116,14 @@
                     const key = document.getElementById('geminiApiKey').value;
                     const lang = document.getElementById('translateTo').value;
                     const opensubtitles_key = document.getElementById('osApiKey').value;
+                    const opensubtitles_app = document.getElementById('osAppName').value;
                     
-                    if (!key || !lang || !opensubtitles_key) {
+                    if (!key || !lang || !opensubtitles_key || !opensubtitles_app) {
                         alert('Please fill in all fields');
                         return null;
                     }
                     
-                    return { key, lang, opensubtitles_key };
+                    return { key, lang, opensubtitles_key, opensubtitles_app };
                 }
 
                 document.getElementById('install').addEventListener('click', () => {
