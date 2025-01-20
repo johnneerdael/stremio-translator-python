@@ -1,4 +1,5 @@
 import google.generativeai as genai
+import json
 from typing import Optional
 
 class TranslationManager:
@@ -7,68 +8,72 @@ class TranslationManager:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         
-        # Configure response schema for structured output
-        self.schema = {
-            "type": "object",
-            "properties": {
-                "translation": {
-                    "type": "string",
-                    "description": "The translated text"
-                }
-            },
-            "required": ["translation"]
+        # Configure generation settings
+        self.generation_config = {
+            "temperature": 0.3,
+            "candidate_count": 1,
+            "stop_sequences": [],
+            "max_output_tokens": 1024,
+            "top_p": 0.8,
+            "top_k": 40
         }
-
+        
     async def translate_text(self, text: str) -> Optional[str]:
         """Translate text to target language with context"""
         try:
-            # Create a prompt that provides context about the translation task
+            # Parse input SRT format
+            lines = text.strip().split('\n')
+            if len(lines) < 3:
+                print("Invalid SRT format")
+                return None
+                
+            index = int(lines[0])
+            timecodes = lines[1].split(' --> ')
+            start_time = timecodes[0]
+            end_time = timecodes[1]
+            subtitle_text = '\n'.join(lines[2:]).strip()
+            
+            # Create prompt with structured output example
             prompt = f"""You are an expert subtitle translator specializing in translating from English to {self.target_lang}.
-            Context: This is a subtitle from a video/movie that needs to be translated while preserving the original meaning and style.
             
             Guidelines:
             - Maintain the natural flow and conversational tone of the dialogue
             - Keep proper names, places, and technical terms unchanged
-            - Preserve any special formatting or punctuation
             - Consider the cultural context while translating
-            - For dangerous content warnings, translate them appropriately for the target audience
+            - For dangerous content warnings, translate them appropriately
             
-            Original English text: {text}
+            Translate this subtitle to {self.target_lang} and return in this JSON format:
+            {{
+                "translation": {{
+                    "text": "translated text here",
+                    "index": {index},
+                    "start_time": "{start_time}",
+                    "end_time": "{end_time}"
+                }}
+            }}
             
-            Translate the above text to {self.target_lang}, returning ONLY the translated text without any explanations or notes."""
+            Original English text: {subtitle_text}"""
 
-            # Generate translation with schema and safety settings
+            # Generate translation
             response = self.model.generate_content(
                 prompt,
-                generation_config={
-                    "temperature": 0.3,  # Lower temperature for more consistent translations
-                    "candidate_count": 1,
-                    "stop_sequences": [],
-                    "max_output_tokens": 1024,
-                    "top_p": 0.8,
-                    "top_k": 40,
-                    "response_schema": self.schema
-                },
-                safety_settings=[
-                    {
-                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                        "threshold": "BLOCK_NONE"
-                    }
-                ]
+                generation_config=self.generation_config
             )
 
             try:
-                # Extract translation from structured response
-                result = response.candidates[0].content.parts[0]
-                if hasattr(result, 'text'):
-                    # Clean up any extra whitespace or formatting
-                    translation = result.text.strip()
-                    if translation:
-                        return translation
-                print("No valid translation text in response")
-                return None
+                # Parse JSON response
+                result = response.text.strip()
+                data = json.loads(result)
+                
+                # Format as SRT
+                srt = f"{data['translation']['index']}\n"
+                srt += f"{data['translation']['start_time']} --> {data['translation']['end_time']}\n"
+                srt += f"{data['translation']['text']}"
+                return srt
+                
             except Exception as e:
-                print(f"Error extracting translation: {str(e)}")
+                print(f"Error parsing translation response: {str(e)}")
+                print(f"Raw response: {response.text}")
                 return None
 
         except Exception as e:
