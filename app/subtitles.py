@@ -1,11 +1,9 @@
-import aiohttp
 import json
 from typing import List, Dict, Optional
 from pathlib import Path
 import asyncio
 from datetime import datetime, timedelta
-from pythonopensubtitles.opensubtitles import OpenSubtitles
-from pythonopensubtitles.utils import File
+from opensubtitlescom import OpenSubtitles
 
 class SubtitleEntry:
     def __init__(self, start: int, text: str):
@@ -20,10 +18,8 @@ class SubtitleEntry:
         }
 
 class SubtitleProcessor:
-    def __init__(self, username: str, password: str):
-        self.opensubtitles = OpenSubtitles()
-        self.username = username
-        self.password = password
+    def __init__(self, api_key: str):
+        self.client = OpenSubtitles("Stremio AI Translator v1.6.3", api_key)
         self.batch_size = 15  # Free tier: 15 requests per second
         self.window_size = 60  # 1 minute window
         self.last_batch_time = datetime.now()
@@ -33,9 +29,6 @@ class SubtitleProcessor:
     async def fetch_subtitles(self, type: str, id: str) -> List[SubtitleEntry]:
         """Fetch subtitles from OpenSubtitles"""
         try:
-            # Login to OpenSubtitles with credentials
-            self.opensubtitles.login(self.username, self.password)
-            
             # Parse IMDB ID and episode info if series
             imdb_id = id
             season = None
@@ -48,37 +41,30 @@ class SubtitleProcessor:
                     episode = parts[2]
 
             # Build search query
-            search_query = {
-                'sublanguageid': 'eng',
-                'imdbid': imdb_id.replace('tt', ''),  # OpenSubtitles expects ID without 'tt'
+            search_params = {
+                'languages': 'en',
+                'imdb_id': imdb_id.replace('tt', ''),  # OpenSubtitles expects ID without 'tt'
             }
             
             if type == 'series' and season and episode:
-                search_query.update({
-                    'season': season,
-                    'episode': episode
-                })
+                search_params['season_number'] = int(season)
+                search_params['episode_number'] = int(episode)
 
-            print(f"OpenSubtitles search query: {json.dumps(search_query, indent=2)}")
+            print(f"OpenSubtitles search params: {json.dumps(search_params, indent=2)}")
             
             # Search for subtitles
-            subtitles = self.opensubtitles.search_subtitles([search_query])
-            print(f"OpenSubtitles search results: {json.dumps(subtitles, indent=2) if subtitles else 'No results'}")
+            response = self.client.search(**search_params)
+            print(f"OpenSubtitles search results: {response.to_json()}")
             
-            # Download the first matching subtitle
-            if subtitles:
-                subtitle_id = subtitles[0].get('IDSubtitleFile')
-                if not subtitle_id:
-                    raise Exception(f"Invalid subtitle response: {json.dumps(subtitles[0], indent=2)}")
-                subtitle_path = self.opensubtitles.download_subtitles([subtitle_id], extension='srt')
-                
-                # Parse the downloaded SRT file
-                with open(subtitle_path[0], 'r', encoding='utf-8') as f:
-                    srt_content = f.read()
-                    entries = self.parse_srt(srt_content)
-                    return entries
-            else:
+            if not response.data:
                 raise Exception("No subtitles found")
+
+            # Get first subtitle
+            subtitle = response.data[0]
+            
+            # Download and parse subtitle
+            srt_content = self.client.download_and_parse(subtitle)
+            return self.parse_srt(srt_content)
                         
         except Exception as e:
             print(f"Error fetching subtitles: {str(e)}")

@@ -92,11 +92,7 @@
             </div>
 
             <div class="form-item">
-                <sl-input id="osUsername" type="text" label="OpenSubtitles Username" value="{{ config.username }}" placeholder="Enter your OpenSubtitles username"></sl-input>
-            </div>
-
-            <div class="form-item">
-                <sl-input id="osPassword" type="password" label="OpenSubtitles Password" value="{{ config.password }}" placeholder="Enter your OpenSubtitles password"></sl-input>
+                <sl-input id="osApiKey" type="password" label="OpenSubtitles API Key" value="{{ config.opensubtitles_key }}" placeholder="Enter your OpenSubtitles API key"></sl-input>
             </div>
 
             <div class="centered-item">
@@ -115,15 +111,14 @@
                 function getSettings() {
                     const key = document.getElementById('geminiApiKey').value;
                     const lang = document.getElementById('translateTo').value;
-                    const username = document.getElementById('osUsername').value;
-                    const password = document.getElementById('osPassword').value;
+                    const opensubtitles_key = document.getElementById('osApiKey').value;
                     
-                    if (!key || !lang || !username || !password) {
+                    if (!key || !lang || !opensubtitles_key) {
                         alert('Please fill in all fields');
                         return null;
                     }
                     
-                    return { key, lang, username, password };
+                    return { key, lang, opensubtitles_key };
                 }
 
                 document.getElementById('install').addEventListener('click', () => {

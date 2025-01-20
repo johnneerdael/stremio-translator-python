@@ -3,5 +3,5 @@ aiohttp
 jinja2
 uvicorn
 pydantic
-python-opensubtitles
+opensubtitlescom
 google-generativeai

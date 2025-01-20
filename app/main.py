@@ -59,10 +59,9 @@ def get_manifest(base_url: str):
     return manifest
 
 class Config(BaseModel):
-    key: Optional[str] = None
+    key: Optional[str] = None  # Gemini API key
     lang: Optional[str] = None
-    username: Optional[str] = None  # OpenSubtitles username
-    password: Optional[str] = None  # OpenSubtitles password
+    opensubtitles_key: Optional[str] = None  # OpenSubtitles API key
 
 async def get_config(config_b64: Optional[str] = None) -> Config:
     """Get configuration from base64 or default values"""
@@ -152,8 +151,8 @@ async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
         if not config.lang:
             raise HTTPException(status_code=400, detail="Target language not configured")
             
-        if not config.username or not config.password:
-            # If no credentials, check if English subtitles are included in stream
+        if not config.opensubtitles_key:
+            # If no API key, check if English subtitles are included in stream
             return JSONResponse({
                 "subtitles": [
                     # First try English subtitles from stream
@@ -172,7 +171,7 @@ async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
             })
         
         # Initialize processors
-        subtitle_processor = SubtitleProcessor(config.username, config.password)
+        subtitle_processor = SubtitleProcessor(config.opensubtitles_key)
         translation_manager = TranslationManager(config.key, config.lang)
         
         # Check cache
