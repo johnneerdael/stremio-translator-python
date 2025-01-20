@@ -40,48 +40,21 @@ def get_manifest(base_url: str):
         "version": "1.6.3",
         "name": "AI Subtitle Translator",
         "description": "Translates subtitles using Google Gemini AI",
-        "resources": ["subtitles"],
+        "resources": [
+            {
+                "name": "subtitles",
+                "types": ["movie", "series"],
+                "idPrefixes": ["tt"]
+            }
+        ],
         "types": ["movie", "series"],
         "catalogs": [],
-        "idPrefixes": ["tt"],
         "logo": f"{base_url}/assets/logo.png",
         "background": f"{base_url}/assets/wallpaper.png",
         "behaviorHints": {
             "configurable": True,
             "configurationRequired": True
-        },
-        "config": [
-            {
-                "key": "key",
-                "type": "password",
-                "title": "Google Gemini API Key",
-                "required": True
-            },
-            {
-                "key": "lang",
-                "type": "select",
-                "title": "Target Language",
-                "options": [lang["code"] for lang in get_languages()],
-                "required": True
-            },
-            {
-                "key": "cache",
-                "type": "number",
-                "title": "Cache Time (hours)",
-                "default": "24"
-            },
-            {
-                "key": "concurrent",
-                "type": "number",
-                "title": "Max Concurrent Translations",
-                "default": "3"
-            },
-            {
-                "key": "debug",
-                "type": "checkbox",
-                "title": "Debug Mode"
-            }
-        ]
+        }
     }
 
 class Config(BaseModel):
