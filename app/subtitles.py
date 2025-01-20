@@ -4,6 +4,7 @@ from typing import List, Dict, Optional
 from pathlib import Path
 import asyncio
 from datetime import datetime, timedelta
+from stremio_opensubtitles import OpenSubtitles
 
 class SubtitleEntry:
     def __init__(self, start: int, text: str):
@@ -19,7 +20,7 @@ class SubtitleEntry:
 
 class SubtitleProcessor:
     def __init__(self):
-        self.stremio_proxy = "https://stremio-opensubtitles.strem.io"
+        self.opensubtitles = OpenSubtitles()
         self.batch_size = 15  # Free tier: 15 requests per second
         self.window_size = 60  # 1 minute window
         self.last_batch_time = datetime.now()
@@ -27,37 +28,15 @@ class SubtitleProcessor:
         self.buffer_time = 2 * 60 * 1000  # 2 minutes buffer in milliseconds
 
     async def fetch_subtitles(self, type: str, id: str) -> List[SubtitleEntry]:
-        """Fetch subtitles from Stremio's OpenSubtitles proxy"""
+        """Fetch subtitles from OpenSubtitles"""
         try:
-            async with aiohttp.ClientSession() as session:
-                # First try to get the subtitle list
-                list_url = f"{self.stremio_proxy}/subtitles/{type}/{id}.json"
-                async with session.get(list_url) as response:
-                    if response.status != 200:
-                        raise Exception(f"Failed to fetch subtitle list: {response.status}")
-                    
-                    subtitle_list = await response.json()
-                    if not subtitle_list.get('subtitles'):
-                        raise Exception("No subtitles found")
-                    
-                    # Find English subtitles
-                    eng_sub = next((sub for sub in subtitle_list['subtitles'] 
-                                  if sub.get('lang') == 'eng' or sub.get('lang') == 'en'), None)
-                    if not eng_sub:
-                        raise Exception("No English subtitles found")
-                    
-                    # Get the actual subtitle content
-                    sub_url = eng_sub.get('url')
-                    if not sub_url:
-                        sub_url = f"{self.stremio_proxy}/subtitles/{type}/{id}/en.srt"
-                    
-                    async with session.get(sub_url) as sub_response:
-                        if sub_response.status != 200:
-                            raise Exception(f"Failed to fetch subtitle content: {sub_response.status}")
-                        
-                        srt_content = await sub_response.text()
-                        return self.parse_srt(srt_content)
-                        
+            subtitles = await self.opensubtitles.get_video_subtitles(type, id)
+            entries = []
+            for subtitle in subtitles:
+                for track in subtitle.tracks:
+                    if track.language == 'en':
+                        entries.extend(self.parse_srt(track.contents))
+            return entries
         except Exception as e:
             print(f"Error fetching subtitles: {str(e)}")
             raise
@@ -77,20 +56,27 @@ class SubtitleProcessor:
             
             try:
                 # Parse timecode
-                times = parts[1].split(' --> ')[0]
-                h, m, s = times.split(':')
-                ms = s.split(',')[1]
-                start_ms = (int(h) * 3600 + int(m) * 60 + int(s.split(',')[0])) * 1000 + int(ms)
+                times = parts[1].split(' --> ')
+                start_time, end_time = [self.parse_timecode(t) for t in times]
+                start_ms = start_time.total_seconds() * 1000
                 
                 # Get text
                 text = '\n'.join(parts[2:]).strip()
                 if text:  # Only add if there's actual text
-                    entries.append(SubtitleEntry(start_ms, text))
+                    entries.append(SubtitleEntry(int(start_ms), text))
             except Exception as e:
                 print(f"Error parsing subtitle entry: {str(e)}")
                 continue
         
         return sorted(entries, key=lambda x: x.start)
+
+    def parse_timecode(self, timecode):
+        """Parse timecode string into datetime"""
+        parts = timecode.split(':')
+        hours = int(parts[0])
+        minutes = int(parts[1])
+        seconds, milliseconds = [int(p) for p in parts[2].split(',')]
+        return datetime(1, 1, 1, hours, minutes, seconds, milliseconds * 1000)
 
     def prioritize_subtitles(self, entries: List[SubtitleEntry]) -> List[List[SubtitleEntry]]:
         """Split subtitles into priority batches"""
