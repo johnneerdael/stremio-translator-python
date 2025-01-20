@@ -172,23 +172,44 @@ async def subtitles(
         if not config.lang:
             raise HTTPException(status_code=400, detail="Target language not configured")
             
-        # Always try embedded subtitles first
-        response_subtitles = [
-            # First try English subtitles from stream
-            {
-                "id": "included",
-                "lang": "eng",
-                "url": None  # This tells Stremio to use embedded subtitles
+        # Initialize response subtitles list
+        response_subtitles = []
+        
+        # Extract stream metadata
+        stream_info = {}
+        if '=' in video_hash:
+            params = dict(param.split('=') for p in video_hash.split('&'))
+            stream_info = {
+                'filename': params.get('filename', ''),
+                'videoHash': params.get('videoHash', ''),
+                'videoSize': params.get('videoSize', '')
             }
-        ]
+            
+            if stream_info['filename']:
+                print(f"Stream metadata:")
+                print(f"- Filename: {stream_info['filename']}")
+                print(f"- Video hash: {stream_info['videoHash']}")
+                print(f"- Video size: {stream_info['videoSize']}")
+
+        # Check for embedded subtitles
+        print("Checking for English subtitles in stream...")
+        if stream_info.get('filename'):
+            print("Stream has embedded subtitles, adding as primary option")
+            response_subtitles.append({
+                "id": "eng-embedded",  # Unique identifier
+                "lang": "eng",         # ISO 639-2 code
+                "url": None            # Null URL for embedded subtitles
+            })
 
         if not config.opensubtitles_key:
-            # If no API key, add loading message as fallback
-            response_subtitles.append({
-                "id": "loading",
-                "lang": config.lang,
-                "url": f"{get_base_url()}/loading.srt"
-            })
+            print("No OpenSubtitles API key configured")
+            if not response_subtitles:
+                print("No embedded subtitles found, showing loading message")
+                response_subtitles.append({
+                    "id": "loading",
+                    "lang": config.lang,  # Target translation language
+                    "url": f"{get_base_url()}/loading.srt"
+                })
             return JSONResponse({"subtitles": response_subtitles})
         
         # Initialize processors
@@ -236,8 +257,8 @@ async def subtitles(
         
         # Add translated subtitles as an option after embedded ones
         response_subtitles.append({
-            "id": "translated",
-            "lang": config.lang,
+            "id": f"translated-{config.lang}",  # Unique identifier with language
+            "lang": config.lang,                # Target language code
             "url": f"{get_base_url()}/subtitles/{cache_key}/translated.srt"
         })
 

@@ -2,8 +2,8 @@ import json
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 import asyncio
+import aiohttp
 from datetime import datetime, timedelta
-from opensubtitlescom import OpenSubtitles
 from difflib import SequenceMatcher
 import re
 
@@ -21,7 +21,9 @@ class SubtitleEntry:
 
 class SubtitleProcessor:
     def __init__(self, api_key: str, app_name: str = "Stremio AI Translator"):
-        self.client = OpenSubtitles(app_name, api_key)
+        self.api_key = api_key
+        self.app_name = app_name
+        self.base_url = "https://api.opensubtitles.com/api/v1"
         self.batch_size = 15  # Free tier: 15 requests per second
         self.window_size = 60  # 1 minute window
         self.last_batch_time = datetime.now()
@@ -65,61 +67,104 @@ class SubtitleProcessor:
 
             print(f"OpenSubtitles search params: {json.dumps(search_params, indent=2)}")
             
-            # Search for subtitles
-            response = self.client.search(**search_params)
-            print(f"OpenSubtitles search results: {response.to_json()}")
-            
-            if not response.data:
-                raise Exception("No subtitles found")
+            # Set up headers for API requests
+            headers = {
+                'Api-Key': self.api_key,
+                'Content-Type': 'application/json',
+                'User-Agent': f"{self.app_name}"
+            }
 
-            # Extract video filename from parameters if available
-            video_filename = None
-            if '&videoSize=' in id:
-                try:
-                    # Extract filename from parameters
-                    params = dict(p.split('=') for p in id.split('&'))
-                    if 'filename' in params:
-                        video_filename = params['filename']
-                except:
-                    pass
+            async with aiohttp.ClientSession() as session:
+                # Search for subtitles
+                async with session.get(
+                    f"{self.base_url}/subtitles",
+                    params=search_params,
+                    headers=headers
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        print(f"OpenSubtitles API error: {error_text}")
+                        raise Exception(f"API error: {response.status} - {error_text}")
+                    
+                    data = await response.json()
+                    print(f"OpenSubtitles search results: {json.dumps(data, indent=2)}")
+                    
+                    if not data.get('data'):
+                        raise Exception("No subtitles found")
 
-            # Find best matching subtitle by filename similarity
-            best_subtitle = None
-            best_match_ratio = 0
+                # Extract video filename from parameters if available
+                video_filename = None
+                if '&videoSize=' in id:
+                    try:
+                        params = dict(p.split('=') for p in id.split('&'))
+                        if 'filename' in params:
+                            video_filename = params['filename']
+                    except:
+                        pass
 
-            print("Comparing subtitles for video:", video_filename)
-            for subtitle in response.data:
-                # Get subtitle filename
-                sub_filename = subtitle.get('release', '') or subtitle.get('file_name', '')
+                # Find best matching subtitle
+                best_subtitle = None
+                best_match_ratio = 0
+
+                print("Comparing subtitles for video:", video_filename or "Using embedded English subtitles")
                 
-                if video_filename and sub_filename:
-                    # Clean filenames for comparison
-                    clean_video = re.sub(r'[^\w\s]', '', video_filename.lower())
-                    clean_sub = re.sub(r'[^\w\s]', '', sub_filename.lower())
+                for subtitle in data['data']:
+                    # Get subtitle filename
+                    sub_filename = subtitle.get('attributes', {}).get('release', '') or subtitle.get('attributes', {}).get('files', [{}])[0].get('file_name', '')
                     
-                    # Calculate similarity ratio
-                    ratio = SequenceMatcher(None, clean_video, clean_sub).ratio()
-                    print(f"Subtitle: {sub_filename}")
-                    print(f"Similarity: {ratio * 100:.2f}%")
+                    if video_filename and sub_filename:
+                        # Clean filenames for comparison
+                        clean_video = re.sub(r'[^\w\s]', '', video_filename.lower())
+                        clean_sub = re.sub(r'[^\w\s]', '', sub_filename.lower())
+                        
+                        # Calculate similarity ratio
+                        ratio = SequenceMatcher(None, clean_video, clean_sub).ratio()
+                        print(f"Subtitle: {sub_filename}")
+                        print(f"Similarity: {ratio * 100:.2f}%")
+                        
+                        # Update best match if this is better
+                        if ratio > best_match_ratio:
+                            best_match_ratio = ratio
+                            best_subtitle = subtitle
+
+                if not best_subtitle:
+                    # If no filename matches, use the most downloaded subtitle
+                    best_subtitle = max(data['data'], key=lambda s: s.get('attributes', {}).get('download_count', 0))
+                    print(f"No filename match found, using most downloaded subtitle")
+
+                # Get file ID for download
+                file_id = best_subtitle.get('attributes', {}).get('files', [{}])[0].get('file_id')
+                if not file_id:
+                    raise Exception("Could not get file ID from subtitle")
+
+                print(f"Selected subtitle: {best_subtitle.get('attributes', {}).get('release', '')}")
+                print(f"Download count: {best_subtitle.get('attributes', {}).get('download_count', 0)}")
+                print(f"Match ratio: {best_match_ratio * 100:.2f}%")
+                print(f"File ID: {file_id}")
+
+                # Download subtitle
+                async with session.post(
+                    f"{self.base_url}/download",
+                    headers=headers,
+                    json={
+                        'file_id': file_id,
+                        'sub_format': 'srt'  # Request SRT format
+                    }
+                ) as download_response:
+                    if download_response.status != 200:
+                        error_text = await download_response.text()
+                        raise Exception(f"Download error: {download_response.status} - {error_text}")
                     
-                    # Update best match if this is better
-                    if ratio > best_match_ratio:
-                        best_match_ratio = ratio
-                        best_subtitle = subtitle
-
-            if not best_subtitle:
-                # If no filename matches, use the most downloaded subtitle
-                best_subtitle = max(response.data, key=lambda s: s.get('download_count', 0))
-                print(f"No filename match found, using most downloaded subtitle")
-
-            subtitle = best_subtitle
-            print(f"Selected subtitle: {subtitle.get('release', '') or subtitle.get('file_name', '')}")
-            print(f"Download count: {subtitle.get('download_count', 0)}")
-            print(f"Match ratio: {best_match_ratio * 100:.2f}%")
-            
-            # Download and parse subtitle
-            srt_content = self.client.download_and_parse(subtitle)
-            return self.parse_srt(srt_content)
+                    download_data = await download_response.json()
+                    print(f"Download response: {json.dumps(download_data, indent=2)}")
+                    
+                    # Get subtitle content from temporary URL
+                    async with session.get(download_data['link']) as content_response:
+                        if content_response.status != 200:
+                            raise Exception(f"Content download failed: {content_response.status}")
+                        
+                        srt_content = await content_response.text()
+                        return self.parse_srt(srt_content)
                         
         except Exception as e:
             print(f"Error fetching subtitles: {str(e)}")
