@@ -36,7 +36,7 @@ def get_base_url():
 # Manifest definition
 def get_manifest(base_url: str):
     domain = base_url.replace("https://", "").replace("http://", "")
-    return {
+    manifest = {
         "id": "org.stremio.aitranslator",
         "version": "1.6.3",
         "name": "AI Subtitle Translator",
@@ -45,14 +45,30 @@ def get_manifest(base_url: str):
         "types": ["movie", "series"],
         "idPrefixes": ["tt"],
         "catalogs": [],
+        "logo": f"{base_url}/assets/logo.png",
+        "background": f"{base_url}/assets/wallpaper.png",
+        "contactEmail": "johninNL@gmail.com",
+        "config": [
+            {
+                "key": "key",
+                "type": "password",
+                "title": "Google Gemini API Key",
+                "required": True
+            },
+            {
+                "key": "lang",
+                "type": "select",
+                "title": "Target Language",
+                "options": [lang["code"] for lang in get_languages()],
+                "required": True
+            }
+        ],
         "behaviorHints": {
             "configurable": True,
             "configurationRequired": True
-        },
-        "logo": f"{base_url}/assets/logo.png",
-        "background": f"{base_url}/assets/wallpaper.png",
-        "contactEmail": "johninNL@gmail.com"
+        }
     }
+    return manifest
 
 class Config(BaseModel):
     key: Optional[str] = None
@@ -120,17 +136,10 @@ async def configure_with_config(request: Request, config_b64: str):
     )
 
 @app.get("/manifest.json")
-@app.get("/{config_b64}/manifest.json")
-async def manifest(request: Request, config_b64: Optional[str] = None):
+async def manifest(request: Request):
     """Manifest endpoint"""
     base_url = get_base_url()
     manifest_data = get_manifest(base_url)
-    
-    # Add transportUrl if config is provided
-    if config_b64:
-        domain = base_url.replace("https://", "").replace("http://", "")
-        manifest_data["transportUrl"] = f"http://{domain}/{config_b64}/manifest.json"
-    
     return JSONResponse(manifest_data)
 
 @app.get("/{config_b64}/subtitles/{type}/{id}/{video_hash}.json")
