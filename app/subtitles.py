@@ -20,15 +20,21 @@ class SubtitleEntry:
         }
 
 class SubtitleProcessor:
+    # Class-level storage
+    _user_rate_limits = {}
+    _cache_lock = asyncio.Lock()
+    _rate_limit_cleanup_lock = asyncio.Lock()
+    _last_cleanup = datetime.now()
+    
     def __init__(self, api_key: str, app_name: str = "Stremio AI Translator"):
         self.api_key = api_key
         self.app_name = app_name
         self.base_url = "https://api.opensubtitles.com/api/v1"
         self.batch_size = 15  # Free tier: 15 requests per second
         self.window_size = 60  # 1 minute window
-        self.last_batch_time = datetime.now()
-        self.requests_in_window = 0
         self.buffer_time = 2 * 60 * 1000  # 2 minutes buffer in milliseconds
+        self.cache_ttl = 7 * 24 * 60 * 60  # 7 days in seconds
+        self.cleanup_interval = 60 * 60  # Cleanup every hour
 
     async def fetch_subtitles(self, type: str, id: str) -> List[SubtitleEntry]:
         """Fetch subtitles from OpenSubtitles"""
@@ -243,41 +249,138 @@ class SubtitleProcessor:
 
         return result
 
-    async def process_batch(self, batch: List[SubtitleEntry], translate_fn) -> None:
-        """Process a batch of subtitles with rate limiting"""
+    async def process_batch(self, batch: List[SubtitleEntry], translate_fn, config_b64: str) -> None:
+        """Process a batch of subtitles with user-specific rate limiting"""
         now = datetime.now()
         
+        # Get user-specific rate limit data
+        last_batch_time, requests_in_window = self._get_user_rate_limit(config_b64)
+        
         # Reset counter if window has passed
-        if (now - self.last_batch_time) > timedelta(seconds=self.window_size):
-            self.requests_in_window = 0
-            self.last_batch_time = now
+        if (now - last_batch_time) > timedelta(seconds=self.window_size):
+            requests_in_window = 0
+            last_batch_time = now
 
         # Check rate limit
-        if self.requests_in_window >= self.batch_size:
-            wait_time = self.window_size - (now - self.last_batch_time).seconds
+        if requests_in_window >= self.batch_size:
+            wait_time = self.window_size - (now - last_batch_time).seconds
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
-                self.requests_in_window = 0
-                self.last_batch_time = datetime.now()
+                requests_in_window = 0
+                last_batch_time = datetime.now()
 
         # Process batch
         tasks = []
         for entry in batch:
             if not entry.translated_text:  # Only translate if not already translated
                 tasks.append(translate_fn(entry.text))
-                self.requests_in_window += 1
+                requests_in_window += 1
+
+        # Update user rate limit data
+        self._update_user_rate_limit(config_b64, last_batch_time, requests_in_window)
 
         translations = await asyncio.gather(*tasks)
         for entry, translation in zip(batch, translations):
             entry.translated_text = translation
 
-    def save_cache(self, entries: List[SubtitleEntry], cache_path: Path) -> None:
-        """Save translated subtitles to cache"""
-        subtitles = {"subtitles": [entry.to_dict() for entry in entries]}
-        cache_path.write_text(json.dumps(subtitles, ensure_ascii=False))
+    async def save_cache(self, entries: List[SubtitleEntry], cache_path: Path) -> None:
+        """Save translated subtitles to cache with TTL"""
+        async with self._cache_lock:
+            try:
+                subtitles = {
+                    "subtitles": [entry.to_dict() for entry in entries],
+                    "timestamp": datetime.now().timestamp()
+                }
+                # Write to temporary file first
+                temp_path = cache_path.with_suffix('.tmp')
+                temp_path.write_text(json.dumps(subtitles, ensure_ascii=False))
+                # Atomic rename
+                temp_path.replace(cache_path)
+                
+                # Trigger cleanup if needed
+                await self._cleanup_old_files()
+            except Exception as e:
+                print(f"Cache save error: {str(e)}")
+                if temp_path.exists():
+                    temp_path.unlink()
+                raise
 
-    def load_cache(self, cache_path: Path) -> Optional[Dict]:
-        """Load translated subtitles from cache"""
-        if cache_path.exists():
-            return json.loads(cache_path.read_text())
-        return None
+    async def load_cache(self, cache_path: Path) -> Optional[Dict]:
+        """Load translated subtitles from cache if not expired"""
+        async with self._cache_lock:
+            if not cache_path.exists():
+                return None
+                
+            try:
+                data = json.loads(cache_path.read_text())
+                timestamp = data.get("timestamp", 0)
+                
+                # Check if cache has expired
+                if datetime.now().timestamp() - timestamp > self.cache_ttl:
+                    cache_path.unlink()  # Delete expired cache
+                    return None
+                    
+                return {"subtitles": data["subtitles"]}
+            except Exception as e:
+                print(f"Cache error: {str(e)}")
+                return None
+
+    def _get_user_rate_limit(self, config_b64: str) -> Tuple[datetime, int]:
+        """Get user-specific rate limit data"""
+        if config_b64 not in self._user_rate_limits:
+            self._user_rate_limits[config_b64] = {
+                "last_batch_time": datetime.now(),
+                "requests_in_window": 0
+            }
+        return (
+            self._user_rate_limits[config_b64]["last_batch_time"],
+            self._user_rate_limits[config_b64]["requests_in_window"]
+        )
+
+    def _update_user_rate_limit(self, config_b64: str, batch_time: datetime, requests: int) -> None:
+        """Update user-specific rate limit data"""
+        self._user_rate_limits[config_b64] = {
+            "last_batch_time": batch_time,
+            "requests_in_window": requests,
+            "last_access": datetime.now()
+        }
+
+    async def _cleanup_old_files(self) -> None:
+        """Clean up expired cache files and rate limit data"""
+        async with self._rate_limit_cleanup_lock:
+            now = datetime.now()
+            
+            # Only run cleanup if enough time has passed
+            if (now - self._last_cleanup).total_seconds() < self.cleanup_interval:
+                return
+                
+            try:
+                # Clean up old cache files
+                cache_dir = Path("subtitles")
+                if cache_dir.exists():
+                    for cache_file in cache_dir.glob("*.json"):
+                        try:
+                            data = json.loads(cache_file.read_text())
+                            timestamp = data.get("timestamp", 0)
+                            if now.timestamp() - timestamp > self.cache_ttl:
+                                cache_file.unlink()
+                                # Also remove corresponding .srt file if it exists
+                                srt_file = cache_file.with_suffix('.srt')
+                                if srt_file.exists():
+                                    srt_file.unlink()
+                        except Exception as e:
+                            print(f"Error cleaning up cache file {cache_file}: {str(e)}")
+                            continue
+                
+                # Clean up old rate limit data
+                stale_users = []
+                for user, data in self._user_rate_limits.items():
+                    if (now - data["last_access"]).total_seconds() > self.cleanup_interval:
+                        stale_users.append(user)
+                
+                for user in stale_users:
+                    del self._user_rate_limits[user]
+                
+                self._last_cleanup = now
+            except Exception as e:
+                print(f"Cleanup error: {str(e)}")

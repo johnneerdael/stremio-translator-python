@@ -138,7 +138,7 @@ async def manifest(request: Request, config_b64: Optional[str] = None):
     return JSONResponse(manifest_data)
 
 @app.get("/{config_b64}/subtitles/{type}/{id}/{video_hash}.json")
-@app.get("/subtitles/{cache_key}/translated.srt")
+@app.get("/{config_b64}/subtitles/{cache_key}/translated.srt")
 async def subtitles(
     config_b64: str,
     type: str = None,
@@ -239,9 +239,9 @@ async def subtitles(
         )
         translation_manager = TranslationManager(config.key, config.lang)
         
-        # Create cache key from type and ID
+        # Create cache key that includes user-specific data
         base_id = id.split('&')[0]  # Remove filename from ID
-        fs_cache_key = f"{type}-{base_id}"  # Filesystem-safe format
+        fs_cache_key = f"{config_b64}-{type}-{base_id}"  # Include config in cache key
         url_cache_key = quote(fs_cache_key)  # URL-encoded format
         
         cache_path = CACHE_DIR / f"{fs_cache_key}.json"
@@ -259,7 +259,8 @@ async def subtitles(
         if batches:
             await subtitle_processor.process_batch(
                 batches[0],
-                translation_manager.translate_text
+                translation_manager.translate_text,
+                config_b64
             )
             # Save initial cache with first batch
             subtitle_processor.save_cache(entries, cache_path)
@@ -270,7 +271,8 @@ async def subtitles(
                 for batch in batches[1:]:
                     await subtitle_processor.process_batch(
                         batch,
-                        translation_manager.translate_text
+                        translation_manager.translate_text,
+                        config_b64
                     )
                     # Update cache after each batch
                     subtitle_processor.save_cache(entries, cache_path)
@@ -278,7 +280,7 @@ async def subtitles(
             asyncio.create_task(process_remaining())
         
         # Add translated subtitles as an option after embedded ones
-        translated_url = f"{get_base_url()}/subtitles/{url_cache_key}/translated.srt"
+        translated_url = f"{get_base_url()}/{config_b64}/subtitles/{url_cache_key}/translated.srt"
         print(f"Adding translated subtitle URL: {translated_url}")
         response_subtitles.append({
             "id": f"translated-{config.lang}",  # Unique identifier with language
