@@ -38,6 +38,7 @@ class SubtitleProcessor:
 
     async def fetch_subtitles(self, type: str, id: str) -> List[SubtitleEntry]:
         """Fetch subtitles from OpenSubtitles"""
+        """Fetch subtitles from OpenSubtitles"""
         try:
             # Parse IMDB ID and episode info if series
             imdb_id = id
@@ -286,14 +287,18 @@ class SubtitleProcessor:
     async def save_cache(self, entries: List[SubtitleEntry], cache_path: Path) -> None:
         """Save translated subtitles to cache with TTL"""
         async with self._cache_lock:
+            temp_path = cache_path.with_suffix('.tmp')
             try:
+                # Prepare cache data
                 subtitles = {
                     "subtitles": [entry.to_dict() for entry in entries],
                     "timestamp": datetime.now().timestamp()
                 }
-                # Write to temporary file first
-                temp_path = cache_path.with_suffix('.tmp')
-                temp_path.write_text(json.dumps(subtitles, ensure_ascii=False))
+                
+                # Write to temporary file
+                with open(temp_path, 'w', encoding='utf-8') as f:
+                    f.write(json.dumps(subtitles, ensure_ascii=False))
+                
                 # Atomic rename
                 temp_path.replace(cache_path)
                 
@@ -312,15 +317,27 @@ class SubtitleProcessor:
                 return None
                 
             try:
-                data = json.loads(cache_path.read_text())
+                # Read file synchronously since it's under lock
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
                 timestamp = data.get("timestamp", 0)
+                now = datetime.now().timestamp()
                 
                 # Check if cache has expired
-                if datetime.now().timestamp() - timestamp > self.cache_ttl:
+                if now - timestamp > self.cache_ttl:
                     cache_path.unlink()  # Delete expired cache
                     return None
-                    
+                
                 return {"subtitles": data["subtitles"]}
+            except json.JSONDecodeError as e:
+                print(f"Cache JSON decode error: {str(e)}")
+                if cache_path.exists():
+                    try:
+                        cache_path.unlink()  # Clean up corrupted cache
+                    except:
+                        pass
+                return None
             except Exception as e:
                 print(f"Cache error: {str(e)}")
                 return None

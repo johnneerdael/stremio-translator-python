@@ -245,7 +245,7 @@ async def subtitles(
         url_cache_key = quote(fs_cache_key)  # URL-encoded format
         
         cache_path = CACHE_DIR / f"{fs_cache_key}.json"
-        cached = subtitle_processor.load_cache(cache_path)
+        cached = await subtitle_processor.load_cache(cache_path)
         if cached:
             return JSONResponse(cached)
         
@@ -263,7 +263,7 @@ async def subtitles(
                 config_b64
             )
             # Save initial cache with first batch
-            subtitle_processor.save_cache(entries, cache_path)
+            await subtitle_processor.save_cache(entries, cache_path)
         
         # Process remaining batches in background
         if len(batches) > 1:
@@ -275,7 +275,7 @@ async def subtitles(
                         config_b64
                     )
                     # Update cache after each batch
-                    subtitle_processor.save_cache(entries, cache_path)
+                    await subtitle_processor.save_cache(entries, cache_path)
             
             asyncio.create_task(process_remaining())
         
