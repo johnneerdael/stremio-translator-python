@@ -134,15 +134,35 @@ async def manifest(request: Request, config_b64: Optional[str] = None):
     return JSONResponse(manifest_data)
 
 @app.get("/{config_b64}/subtitles/{type}/{id}/{video_hash}.json")
-async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
-    """Subtitle endpoint with smart batching and caching"""
+@app.get("/{config_b64}/subtitles/{cache_key}/translated.srt")
+async def subtitles(
+    config_b64: str,
+    type: str = None,
+    id: str = None,
+    video_hash: str = None,
+    cache_key: str = None
+):
+    """Subtitle endpoint with smart caching and reuse"""
     try:
-        # Decode URL parameters
+        config = await get_config(config_b64)
+        
+        # Handle translated.srt request
+        if cache_key:
+            srt_path = CACHE_DIR / f"{cache_key}.srt"
+            if not srt_path.exists():
+                raise HTTPException(status_code=404, detail="Subtitle not found")
+            return srt_path.read_text()
+
+        # Handle subtitle list request
         video_hash = unquote(video_hash).split('.json')[0]  # Remove .json and decode
         if '=' in video_hash:
-            # Handle Stremio's hash format: videoHash=123&videoSize=456
+            # Handle Stremio's hash format: videoHash=123&videoSize=456&filename=show.mp4
             params = dict(param.split('=') for param in video_hash.split('&'))
             video_hash = params.get('videoHash', '')
+            video_filename = params.get('filename', '')
+            if video_filename:
+                # Pass filename in the id for subtitle matching
+                id = f"{id}&filename={video_filename}"
         
         config = await get_config(config_b64)
         
@@ -152,24 +172,24 @@ async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
         if not config.lang:
             raise HTTPException(status_code=400, detail="Target language not configured")
             
+        # Always try embedded subtitles first
+        response_subtitles = [
+            # First try English subtitles from stream
+            {
+                "id": "included",
+                "lang": "eng",
+                "url": None  # This tells Stremio to use embedded subtitles
+            }
+        ]
+
         if not config.opensubtitles_key:
-            # If no API key, check if English subtitles are included in stream
-            return JSONResponse({
-                "subtitles": [
-                    # First try English subtitles from stream
-                    {
-                        "id": "included",
-                        "lang": "eng",
-                        "url": None  # This tells Stremio to use embedded subtitles
-                    },
-                    # Fallback to loading message
-                    {
-                        "id": "loading",
-                        "lang": config.lang,
-                        "url": f"{get_base_url()}/loading.srt"
-                    }
-                ]
+            # If no API key, add loading message as fallback
+            response_subtitles.append({
+                "id": "loading",
+                "lang": config.lang,
+                "url": f"{get_base_url()}/loading.srt"
             })
+            return JSONResponse({"subtitles": response_subtitles})
         
         # Initialize processors
         subtitle_processor = SubtitleProcessor(
@@ -178,8 +198,10 @@ async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
         )
         translation_manager = TranslationManager(config.key, config.lang)
         
-        # Check cache
-        cache_path = CACHE_DIR / f"{type}-{id}-{video_hash}.json"
+        # Use a cache key that's unique to the content but not the specific file
+        # This ensures we reuse subtitles for the same content across different files
+        cache_key = f"{type}-{id.split('&')[0]}"  # Remove filename from cache key
+        cache_path = CACHE_DIR / f"{cache_key}.json"
         cached = subtitle_processor.load_cache(cache_path)
         if cached:
             return JSONResponse(cached)
@@ -212,14 +234,27 @@ async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
             
             asyncio.create_task(process_remaining())
         
-        # Return current state of subtitles
-        return JSONResponse({
-            "subtitles": [{
-                "id": "translated",
-                "lang": config.lang,
-                "url": f"{get_base_url()}/subtitles/{type}/{id}/{video_hash}/translated.srt"
-            }]
+        # Add translated subtitles as an option after embedded ones
+        response_subtitles.append({
+            "id": "translated",
+            "lang": config.lang,
+            "url": f"{get_base_url()}/subtitles/{cache_key}/translated.srt"
         })
+
+        # Save SRT content and response separately
+        srt_path = CACHE_DIR / f"{cache_key}.srt"
+        srt_content = "\n\n".join(
+            f"{i+1}\n{entry.start//1000//3600:02d}:{entry.start//1000%3600//60:02d}:{entry.start//1000%60:02d},{entry.start%1000:03d} --> "
+            f"{entry.start//1000//3600:02d}:{entry.start//1000%3600//60:02d}:{entry.start//1000%60:02d},{entry.start%1000:03d}\n"
+            f"{entry.translated_text or entry.text}"
+            for i, entry in enumerate(entries)
+        )
+        srt_path.write_text(srt_content)
+
+        # Save subtitle list response
+        response_json = {"subtitles": response_subtitles}
+        cache_path.write_text(json.dumps(response_json))
+        return JSONResponse(response_json)
         
     except Exception as e:
         print(f"Subtitle error: {str(e)}")  # Log the error

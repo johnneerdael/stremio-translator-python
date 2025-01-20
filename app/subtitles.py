@@ -1,9 +1,11 @@
 import json
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 import asyncio
 from datetime import datetime, timedelta
 from opensubtitlescom import OpenSubtitles
+from difflib import SequenceMatcher
+import re
 
 class SubtitleEntry:
     def __init__(self, start: int, text: str):
@@ -40,15 +42,26 @@ class SubtitleProcessor:
                     season = parts[1]
                     episode = parts[2]
 
-            # Build search query
+            # Build search query with optimized parameters
             search_params = {
-                'languages': 'en',
-                'imdb_id': imdb_id.replace('tt', ''),  # OpenSubtitles expects ID without 'tt'
+                'languages': 'en',  # English only
+                'machine_translated': 'exclude',  # Exclude machine translations
+                'hearing_impaired': 'exclude',  # Exclude SDH/CC subtitles when possible
+                'type': 'movie' if type == 'movie' else 'episode',  # Specific content type
+                'order_by': 'download_count',  # Most downloaded first as quality indicator
+                'trusted_sources': 'include'  # Prefer trusted uploaders
             }
-            
-            if type == 'series' and season and episode:
-                search_params['season_number'] = int(season)
-                search_params['episode_number'] = int(episode)
+
+            # Add content identifiers
+            if type == 'series':
+                # For TV shows, use parent_imdb_id with season/episode
+                search_params['parent_imdb_id'] = imdb_id.replace('tt', '')
+                if season and episode:
+                    search_params['season_number'] = int(season)
+                    search_params['episode_number'] = int(episode)
+            else:
+                # For movies, use direct imdb_id
+                search_params['imdb_id'] = imdb_id.replace('tt', '')
 
             print(f"OpenSubtitles search params: {json.dumps(search_params, indent=2)}")
             
@@ -59,8 +72,50 @@ class SubtitleProcessor:
             if not response.data:
                 raise Exception("No subtitles found")
 
-            # Get first subtitle
-            subtitle = response.data[0]
+            # Extract video filename from parameters if available
+            video_filename = None
+            if '&videoSize=' in id:
+                try:
+                    # Extract filename from parameters
+                    params = dict(p.split('=') for p in id.split('&'))
+                    if 'filename' in params:
+                        video_filename = params['filename']
+                except:
+                    pass
+
+            # Find best matching subtitle by filename similarity
+            best_subtitle = None
+            best_match_ratio = 0
+
+            print("Comparing subtitles for video:", video_filename)
+            for subtitle in response.data:
+                # Get subtitle filename
+                sub_filename = subtitle.get('release', '') or subtitle.get('file_name', '')
+                
+                if video_filename and sub_filename:
+                    # Clean filenames for comparison
+                    clean_video = re.sub(r'[^\w\s]', '', video_filename.lower())
+                    clean_sub = re.sub(r'[^\w\s]', '', sub_filename.lower())
+                    
+                    # Calculate similarity ratio
+                    ratio = SequenceMatcher(None, clean_video, clean_sub).ratio()
+                    print(f"Subtitle: {sub_filename}")
+                    print(f"Similarity: {ratio * 100:.2f}%")
+                    
+                    # Update best match if this is better
+                    if ratio > best_match_ratio:
+                        best_match_ratio = ratio
+                        best_subtitle = subtitle
+
+            if not best_subtitle:
+                # If no filename matches, use the most downloaded subtitle
+                best_subtitle = max(response.data, key=lambda s: s.get('download_count', 0))
+                print(f"No filename match found, using most downloaded subtitle")
+
+            subtitle = best_subtitle
+            print(f"Selected subtitle: {subtitle.get('release', '') or subtitle.get('file_name', '')}")
+            print(f"Download count: {subtitle.get('download_count', 0)}")
+            print(f"Match ratio: {best_match_ratio * 100:.2f}%")
             
             # Download and parse subtitle
             srt_content = self.client.download_and_parse(subtitle)
