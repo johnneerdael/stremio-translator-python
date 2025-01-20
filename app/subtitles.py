@@ -38,7 +38,6 @@ class SubtitleProcessor:
 
     async def fetch_subtitles(self, type: str, id: str) -> List[SubtitleEntry]:
         """Fetch subtitles from OpenSubtitles"""
-        """Fetch subtitles from OpenSubtitles"""
         try:
             # Parse IMDB ID and episode info if series
             imdb_id = id
@@ -63,13 +62,11 @@ class SubtitleProcessor:
 
             # Add content identifiers
             if type == 'series':
-                # For TV shows, use parent_imdb_id with season/episode
                 search_params['parent_imdb_id'] = imdb_id.replace('tt', '')
                 if season and episode:
                     search_params['season_number'] = int(season)
                     search_params['episode_number'] = int(episode)
             else:
-                # For movies, use direct imdb_id
                 search_params['imdb_id'] = imdb_id.replace('tt', '')
 
             print(f"OpenSubtitles search params: {json.dumps(search_params, indent=2)}")
@@ -120,31 +117,25 @@ class SubtitleProcessor:
                 print("Comparing subtitles for video:", video_filename or "Using embedded English subtitles")
                 
                 for subtitle in subtitles:
-                    # Get subtitle filename
                     sub_filename = subtitle.get('attributes', {}).get('release', '') or subtitle.get('attributes', {}).get('files', [{}])[0].get('file_name', '')
                     
                     if video_filename and sub_filename:
-                        # Clean filenames for comparison
                         clean_video = re.sub(r'[^\w\s]', '', video_filename.lower())
                         clean_sub = re.sub(r'[^\w\s]', '', sub_filename.lower())
                         
-                        # Calculate similarity ratio
                         ratio = SequenceMatcher(None, clean_video, clean_sub).ratio()
                         print(f"Subtitle: {sub_filename}")
                         print(f"Similarity: {ratio * 100:.2f}%")
                         print(f"Foreign parts only: {subtitle.get('attributes', {}).get('foreign_parts_only', False)}")
                         
-                        # Update best match if this is better
                         if ratio > best_match_ratio:
                             best_match_ratio = ratio
                             best_subtitle = subtitle
 
                 if not best_subtitle:
-                    # If no filename matches, use the most downloaded subtitle
                     best_subtitle = max(subtitles, key=lambda s: s.get('attributes', {}).get('download_count', 0))
                     print(f"No filename match found, using most downloaded subtitle")
 
-                # Get file ID for download
                 file_id = best_subtitle.get('attributes', {}).get('files', [{}])[0].get('file_id')
                 if not file_id:
                     raise Exception("Could not get file ID from subtitle")
@@ -154,7 +145,6 @@ class SubtitleProcessor:
                 print(f"Match ratio: {best_match_ratio * 100:.2f}%")
                 print(f"File ID: {file_id}")
 
-                # Download subtitle
                 async with session.post(
                     f"{self.base_url}/download",
                     headers=headers,
@@ -170,7 +160,6 @@ class SubtitleProcessor:
                     download_data = await download_response.json()
                     print(f"Download response: {json.dumps(download_data, indent=2)}")
                     
-                    # Get subtitle content from temporary URL
                     async with session.get(download_data['link']) as content_response:
                         if content_response.status != 200:
                             raise Exception(f"Content download failed: {content_response.status}")
@@ -196,17 +185,16 @@ class SubtitleProcessor:
                 continue
             
             try:
-                # Parse timecode
                 times = parts[1].split(' --> ')
                 start_time, end_time = [self.parse_timecode(t) for t in times]
                 start_ms = int(start_time.total_seconds() * 1000)
                 
-                # Get text
                 text = '\n'.join(parts[2:]).strip()
-                if text:  # Only add if there's actual text
+                if text:
                     entries.append(SubtitleEntry(int(start_ms), text))
             except Exception as e:
                 print(f"Error parsing subtitle entry: {str(e)}")
+                print(f"Block content: {block}")
                 continue
         
         return sorted(entries, key=lambda x: x.start)
@@ -224,7 +212,6 @@ class SubtitleProcessor:
         if not entries:
             return []
 
-        # First batch: First 2 minutes of subtitles
         first_batch = []
         later_batches = []
         two_minutes = 2 * 60 * 1000  # 2 minutes in milliseconds
@@ -235,7 +222,6 @@ class SubtitleProcessor:
             else:
                 later_batches.append(entry)
 
-        # Split later subtitles into batches
         result = [first_batch]
         current_batch = []
         
@@ -254,15 +240,12 @@ class SubtitleProcessor:
         """Process a batch of subtitles with user-specific rate limiting"""
         now = datetime.now()
         
-        # Get user-specific rate limit data
         last_batch_time, requests_in_window = self._get_user_rate_limit(config_b64)
         
-        # Reset counter if window has passed
         if (now - last_batch_time) > timedelta(seconds=self.window_size):
             requests_in_window = 0
             last_batch_time = now
 
-        # Check rate limit
         if requests_in_window >= self.batch_size:
             wait_time = self.window_size - (now - last_batch_time).seconds
             if wait_time > 0:
@@ -270,14 +253,12 @@ class SubtitleProcessor:
                 requests_in_window = 0
                 last_batch_time = datetime.now()
 
-        # Process batch
         tasks = []
         for entry in batch:
-            if not entry.translated_text:  # Only translate if not already translated
+            if not entry.translated_text:
                 tasks.append(translate_fn(entry.text))
                 requests_in_window += 1
 
-        # Update user rate limit data
         self._update_user_rate_limit(config_b64, last_batch_time, requests_in_window)
 
         translations = await asyncio.gather(*tasks)
@@ -289,20 +270,16 @@ class SubtitleProcessor:
         async with self._cache_lock:
             temp_path = cache_path.with_suffix('.tmp')
             try:
-                # Prepare cache data
                 subtitles = {
                     "subtitles": [entry.to_dict() for entry in entries],
                     "timestamp": datetime.now().timestamp()
                 }
                 
-                # Write to temporary file
                 with open(temp_path, 'w', encoding='utf-8') as f:
                     f.write(json.dumps(subtitles, ensure_ascii=False))
                 
-                # Atomic rename
                 temp_path.replace(cache_path)
                 
-                # Trigger cleanup if needed
                 await self._cleanup_old_files()
             except Exception as e:
                 print(f"Cache save error: {str(e)}")
@@ -317,16 +294,14 @@ class SubtitleProcessor:
                 return None
                 
             try:
-                # Read file synchronously since it's under lock
                 with open(cache_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 
                 timestamp = data.get("timestamp", 0)
                 now = datetime.now().timestamp()
                 
-                # Check if cache has expired
                 if now - timestamp > self.cache_ttl:
-                    cache_path.unlink()  # Delete expired cache
+                    cache_path.unlink()
                     return None
                 
                 return {"subtitles": data["subtitles"]}
@@ -334,7 +309,7 @@ class SubtitleProcessor:
                 print(f"Cache JSON decode error: {str(e)}")
                 if cache_path.exists():
                     try:
-                        cache_path.unlink()  # Clean up corrupted cache
+                        cache_path.unlink()
                     except:
                         pass
                 return None
@@ -367,12 +342,10 @@ class SubtitleProcessor:
         async with self._rate_limit_cleanup_lock:
             now = datetime.now()
             
-            # Only run cleanup if enough time has passed
             if (now - self._last_cleanup).total_seconds() < self.cleanup_interval:
                 return
                 
             try:
-                # Clean up old cache files
                 cache_dir = Path("subtitles")
                 if cache_dir.exists():
                     for cache_file in cache_dir.glob("*.json"):
@@ -381,7 +354,6 @@ class SubtitleProcessor:
                             timestamp = data.get("timestamp", 0)
                             if now.timestamp() - timestamp > self.cache_ttl:
                                 cache_file.unlink()
-                                # Also remove corresponding .srt file if it exists
                                 srt_file = cache_file.with_suffix('.srt')
                                 if srt_file.exists():
                                     srt_file.unlink()
@@ -389,7 +361,6 @@ class SubtitleProcessor:
                             print(f"Error cleaning up cache file {cache_file}: {str(e)}")
                             continue
                 
-                # Clean up old rate limit data
                 stale_users = []
                 for user, data in self._user_rate_limits.items():
                     if (now - data["last_access"]).total_seconds() > self.cleanup_interval:

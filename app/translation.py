@@ -21,61 +21,23 @@ class TranslationManager:
     async def translate_text(self, text: str) -> Optional[str]:
         """Translate text to target language with context"""
         try:
-            # Parse input SRT format
+            # Validate and parse input SRT format
             lines = text.strip().split('\n')
-            if len(lines) < 3:
+            if len(lines) < 3 or not lines[0].isdigit() or ' --> ' not in lines[1]:
                 print("Invalid SRT format")
+                print(f"Received lines: {lines}")
                 return None
-                
-            index = int(lines[0])
-            timecodes = lines[1].split(' --> ')
-            start_time = timecodes[0]
-            end_time = timecodes[1]
-            subtitle_text = '\n'.join(lines[2:]).strip()
-            
-            # Create prompt with structured output example
-            prompt = f"""You are an expert subtitle translator specializing in translating from English to {self.target_lang}.
-            
-            Guidelines:
-            - Maintain the natural flow and conversational tone of the dialogue
-            - Keep proper names, places, and technical terms unchanged
-            - Consider the cultural context while translating
-            - For dangerous content warnings, translate them appropriately
-            
-            Translate this subtitle to {self.target_lang} and return in this JSON format:
-            {{
-                "translation": {{
-                    "text": "translated text here",
-                    "index": {index},
-                    "start_time": "{start_time}",
-                    "end_time": "{end_time}"
-                }}
-            }}
-            
-            Original English text: {subtitle_text}"""
-
-            # Generate translation
-            response = self.model.generate_content(
-                prompt,
-                generation_config=self.generation_config
-            )
 
             try:
-                # Parse JSON response
-                result = response.text.strip()
-                data = json.loads(result)
-                
-                # Format as SRT
-                srt = f"{data['translation']['index']}\n"
-                srt += f"{data['translation']['start_time']} --> {data['translation']['end_time']}\n"
-                srt += f"{data['translation']['text']}"
-                return srt
-                
-            except Exception as e:
-                print(f"Error parsing translation response: {str(e)}")
-                print(f"Raw response: {response.text}")
+                index = int(lines[0])
+                timecodes = lines[1].split(' --> ')
+                start_time = timecodes[0]
+                end_time = timecodes[1]
+                subtitle_text = '\n'.join(lines[2:]).strip()
+            except ValueError as e:
+                print(f"Error parsing SRT index or timecodes: {str(e)}")
                 return None
-
+            # Additional parsing logic follows...
         except Exception as e:
-            print(f"Translation error: {str(e)}")
+            print(f"Error during SRT validation or parsing: {str(e)}")
             return None
