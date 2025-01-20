@@ -4,3 +4,4 @@ jinja2
 uvicorn
 pydantic
 python-opensubtitles
+google-generativeai
