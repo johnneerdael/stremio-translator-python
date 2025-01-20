@@ -36,6 +36,94 @@ class SubtitleProcessor:
         self.cache_ttl = 7 * 24 * 60 * 60  # 7 days in seconds
         self.cleanup_interval = 60 * 60  # Cleanup every hour
 
+    def parse_srt(self, srt_content: str) -> List[SubtitleEntry]:
+        """Parse SRT content into subtitle entries"""
+        entries = []
+        current_entry = None
+        current_text = []
+        
+        for line in srt_content.strip().split('\n'):
+            line = line.strip()
+            
+            if not line:  # Empty line indicates end of entry
+                if current_entry is not None and current_text:
+                    current_entry.text = ' '.join(current_text)
+                    entries.append(current_entry)
+                    current_entry = None
+                    current_text = []
+                continue
+                
+            if current_entry is None:
+                try:
+                    int(line)  # Entry number, skip
+                    current_entry = SubtitleEntry(0, "")
+                except ValueError:
+                    if '-->' in line:  # Time line
+                        start = line.split('-->')[0].strip()
+                        h, m, s = start.split(':')
+                        s, ms = s.split(',')
+                        start_ms = (int(h) * 3600 + int(m) * 60 + int(s)) * 1000 + int(ms)
+                        current_entry = SubtitleEntry(start_ms, "")
+            else:
+                current_text.append(line)
+                
+        # Handle last entry
+        if current_entry is not None and current_text:
+            current_entry.text = ' '.join(current_text)
+            entries.append(current_entry)
+            
+        return entries
+
+    async def load_cache(self, cache_path: Path) -> Optional[Dict]:
+        """Load translated subtitles from cache if not expired"""
+        async with self._cache_lock:
+            if not cache_path.exists():
+                return None
+                
+            try:
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                timestamp = data.get("timestamp", 0)
+                now = datetime.now().timestamp()
+                
+                if now - timestamp > self.cache_ttl:
+                    cache_path.unlink()
+                    return None
+                
+                return {"subtitles": data["subtitles"]}
+            except json.JSONDecodeError as e:
+                print(f"Cache JSON decode error: {str(e)}")
+                if cache_path.exists():
+                    try:
+                        cache_path.unlink()
+                    except:
+                        pass
+                return None
+            except Exception as e:
+                print(f"Cache error: {str(e)}")
+                return None
+                
+                timestamp = data.get("timestamp", 0)
+                now = datetime.now().timestamp()
+                
+                if now - timestamp > self.cache_ttl:
+                    cache_path.unlink()
+                    return None
+                
+                return {"subtitles": data["subtitles"]}
+            except json.JSONDecodeError as e:
+                print(f"Cache JSON decode error: {str(e)}")
+                if cache_path.exists():
+                    try:
+                        cache_path.unlink()
+                    except:
+                        pass
+                return None
+            except Exception as e:
+                print(f"Cache error: {str(e)}")
+                return None
+
     async def fetch_subtitles(self, type: str, id: str) -> List[SubtitleEntry]:
         """Fetch subtitles from OpenSubtitles"""
         try:
@@ -145,6 +233,7 @@ class SubtitleProcessor:
                 print(f"Match ratio: {best_match_ratio * 100:.2f}%")
                 print(f"File ID: {file_id}")
 
+                # Download subtitle
                 async with session.post(
                     f"{self.base_url}/download",
                     headers=headers,
@@ -166,288 +255,7 @@ class SubtitleProcessor:
                         
                         srt_content = await content_response.text()
                         return self.parse_srt(srt_content)
-                        
+
         except Exception as e:
             print(f"Error fetching subtitles: {str(e)}")
             raise
-
-    def parse_srt(self, content: str) -> List[SubtitleEntry]:
-        """Parse SRT format into subtitle entries"""
-        entries = []
-        lines = content.strip().split('\n\n')
-        
-        for block in lines:
-            if not block.strip():
-                continue
-            
-            parts = block.split('\n')
-            if len(parts) < 3:
-                continue
-            
-            try:
-                times = parts[1].split(' --> ')
-                start_time, end_time = [self.parse_timecode(t) for t in times]
-                start_ms = int(start_time.total_seconds() * 1000)
-                
-                text = '\n'.join(parts[2:]).strip()
-                if text:
-                    entries.append(SubtitleEntry(int(start_ms), text))
-            except Exception as e:
-                print(f"Error parsing subtitle entry: {str(e)}")
-                print(f"Block content: {block}")
-                continue
-        
-        return sorted(entries, key=lambda x: x.start)
-
-    def parse_timecode(self, timecode):
-        """Parse timecode string into timedelta"""
-        parts = timecode.split(':')
-        hours = int(parts[0])
-        minutes = int(parts[1])
-        seconds, milliseconds = [int(p) for p in parts[2].split(',')]
-        return timedelta(hours=hours, minutes=minutes, seconds=seconds, milliseconds=milliseconds)
-
-    def prioritize_subtitles(self, entries: List[SubtitleEntry]) -> List[List[SubtitleEntry]]:
-        """Split subtitles into priority batches"""
-        if not entries:
-            return []
-
-        first_batch = []
-        later_batches = []
-        two_minutes = 2 * 60 * 1000  # 2 minutes in milliseconds
-
-        for entry in entries:
-            if entry.start <= two_minutes:
-                first_batch.append(entry)
-            else:
-                later_batches.append(entry)
-
-        result = [first_batch]
-        current_batch = []
-        
-        for entry in later_batches:
-            current_batch.append(entry)
-            if len(current_batch) >= self.batch_size:
-                result.append(current_batch)
-                current_batch = []
-        
-        if current_batch:
-            result.append(current_batch)
-
-        return result
-
-    def transform_srt_to_structured_data(self, srt_content: str) -> List[Dict]:
-        """Transform SRT content into structured data for Gemini."""
-        structured_data = []
-        entries = self.parse_srt(srt_content)
-        
-        for entry in entries:
-            structured_data.append({
-                "index": entry.start,
-                "text": entry.text,
-                "start_time": entry.start,
-                "end_time": entry.start + 2000  # Example duration of 2 seconds
-            })
-        
-        return structured_data
-
-    def transform_structured_data_to_srt(self, structured_data: List[Dict]) -> str:
-        """Convert structured data back to valid SRT format."""
-        srt_content = []
-        
-        for item in structured_data:
-            srt_content.append(f"{item['index']}")
-            srt_content.append(f"{self.format_time(item['start_time'])} --> {self.format_time(item['end_time'])}")
-            srt_content.append(item['text'])
-            srt_content.append("")  # Blank line between entries
-        
-        return "\n".join(srt_content).strip()
-
-    def format_time(self, milliseconds: int) -> str:
-        """Format milliseconds into SRT timecode format."""
-        seconds, ms = divmod(milliseconds, 1000)
-        hours, seconds = divmod(seconds, 3600)
-        minutes, seconds = divmod(seconds, 60)
-        return f"{hours:02}:{minutes:02}:{seconds:02},{ms:03}"
-
-    def transform_srt_to_structured_data(self, srt_content: str) -> List[Dict]:
-        """Transform SRT content into structured data for Gemini."""
-        structured_data = []
-        entries = self.parse_srt(srt_content)
-        
-        for entry in entries:
-            structured_data.append({
-                "index": entry.start,
-                "text": entry.text,
-                "start_time": entry.start,
-                "end_time": entry.start + 2000  # Example duration of 2 seconds
-            })
-        
-        return structured_data
-
-    def transform_structured_data_to_srt(self, structured_data: List[Dict]) -> str:
-        """Convert structured data back to valid SRT format."""
-        srt_content = []
-        
-        for item in structured_data:
-            srt_content.append(f"{item['index']}")
-            srt_content.append(f"{self.format_time(item['start_time'])} --> {self.format_time(item['end_time'])}")
-            srt_content.append(item['text'])
-            srt_content.append("")  # Blank line between entries
-        
-        return "\n".join(srt_content).strip()
-
-    def format_time(self, milliseconds: int) -> str:
-        """Format milliseconds into SRT timecode format."""
-        seconds, ms = divmod(milliseconds, 1000)
-        hours, seconds = divmod(seconds, 3600)
-        minutes, seconds = divmod(seconds, 60)
-        return f"{hours:02}:{minutes:02}:{seconds:02},{ms:03}"
-
-    async def process_batch(self, batch: List[SubtitleEntry], translate_fn, config_b64: str) -> None:
-        """Process a batch of subtitles with user-specific rate limiting"""
-        now = datetime.now()
-        
-        last_batch_time, requests_in_window = self._get_user_rate_limit(config_b64)
-        
-        if (now - last_batch_time) > timedelta(seconds=self.window_size):
-            requests_in_window = 0
-            last_batch_time = now
-
-        if requests_in_window >= self.batch_size:
-            wait_time = self.window_size - (now - last_batch_time).seconds
-            if wait_time > 0:
-                await asyncio.sleep(wait_time)
-                requests_in_window = 0
-                last_batch_time = datetime.now()
-
-        # Buffering fast for initial requests
-        initial_requests = min(len(batch), self.batch_size)
-        tasks = [translate_fn(entry.text) for entry in batch[:initial_requests]]
-        requests_in_window += initial_requests
-
-        # Log original SRT content
-        original_srt = "\n".join(entry.text for entry in batch)
-        print("Original SRT content:", original_srt)
-
-        # Update user rate limit data
-        self._update_user_rate_limit(config_b64, last_batch_time, requests_in_window)
-
-        translations = await asyncio.gather(*tasks)
-        for entry, translation in zip(batch[:initial_requests], translations):
-            entry.translated_text = translation
-
-        # Log structured data sent to Gemini
-        structured_data = self.transform_srt_to_structured_data(original_srt)
-        print("Structured data sent to Gemini:", structured_data)
-
-        # Process remaining entries in larger batches
-        remaining_entries = batch[initial_requests:]
-        while remaining_entries:
-            current_batch = remaining_entries[:self.batch_size]
-            remaining_entries = remaining_entries[self.batch_size:]
-
-            # Wait if rate limit is reached
-            if requests_in_window >= self.batch_size:
-                wait_time = self.window_size - (now - last_batch_time).seconds
-                if wait_time > 0:
-                    await asyncio.sleep(wait_time)
-                    requests_in_window = 0
-                    last_batch_time = datetime.now()
-
-            tasks = [translate_fn(entry.text) for entry in current_batch]
-            requests_in_window += len(current_batch)
-
-            # Update user rate limit data
-            self._update_user_rate_limit(config_b64, last_batch_time, requests_in_window)
-
-            translations = await asyncio.gather(*tasks)
-            for entry, translation in zip(current_batch, translations):
-                entry.translated_text = translation
-
-        # Log structured data received from Gemini
-        received_structured_data = [entry.translated_text for entry in batch]
-        print("Structured data received from Gemini:", received_structured_data)
-
-        # Convert structured data back to SRT format
-        converted_srt = self.transform_structured_data_to_srt(structured_data)
-        print("Converted SRT content:", converted_srt)
-        """Process a batch of subtitles with user-specific rate limiting"""
-        now = datetime.now()
-        
-        last_batch_time, requests_in_window = self._get_user_rate_limit(config_b64)
-        
-        if (now - last_batch_time) > timedelta(seconds=self.window_size):
-            requests_in_window = 0
-            last_batch_time = now
-
-        if requests_in_window >= self.batch_size:
-            wait_time = self.window_size - (now - last_batch_time).seconds
-            if wait_time > 0:
-                await asyncio.sleep(wait_time)
-                requests_in_window = 0
-                last_batch_time = datetime.now()
-
-        # Buffering fast for initial requests
-        initial_requests = min(len(batch), self.batch_size)
-        tasks = [translate_fn(entry.text) for entry in batch[:initial_requests]]
-        requests_in_window += initial_requests
-
-        # Update user rate limit data
-        self._update_user_rate_limit(config_b64, last_batch_time, requests_in_window)
-
-        translations = await asyncio.gather(*tasks)
-        for entry, translation in zip(batch[:initial_requests], translations):
-            entry.translated_text = translation
-
-        # Process remaining entries in larger batches
-        remaining_entries = batch[initial_requests:]
-        while remaining_entries:
-            current_batch = remaining_entries[:self.batch_size]
-            remaining_entries = remaining_entries[self.batch_size:]
-
-            # Wait if rate limit is reached
-            if requests_in_window >= self.batch_size:
-                wait_time = self.window_size - (now - last_batch_time).seconds
-                if wait_time > 0:
-                    await asyncio.sleep(wait_time)
-                    requests_in_window = 0
-                    last_batch_time = datetime.now()
-
-            tasks = [translate_fn(entry.text) for entry in current_batch]
-            requests_in_window += len(current_batch)
-
-            # Update user rate limit data
-            self._update_user_rate_limit(config_b64, last_batch_time, requests_in_window)
-
-            translations = await asyncio.gather(*tasks)
-            for entry, translation in zip(current_batch, translations):
-                entry.translated_text = translation
-        """Process a batch of subtitles with user-specific rate limiting"""
-        now = datetime.now()
-        
-        last_batch_time, requests_in_window = self._get_user_rate_limit(config_b64)
-        
-        if (now - last_batch_time) > timedelta(seconds=self.window_size):
-            requests_in_window = 0
-            last_batch_time = now
-
-        if requests_in_window >= self.batch_size:
-            wait_time = self.window_size - (now - last_batch_time).seconds
-            if wait_time > 0:
-                await asyncio.sleep(wait_time)
-                requests_in_window = 0
-                last_batch_time = datetime.now()
-
-        tasks = []
-        for entry in batch:
-            if not entry.translated_text:  # Only translate if not already translated
-                tasks.append(translate_fn(entry.text))
-                requests_in_window += 1
-
-        # Update user rate limit data
-        self._update_user_rate_limit(config_b64, last_batch_time, requests_in_window)
-
-        translations = await asyncio.gather(*tasks)
-        for entry, translation in zip(batch, translations):
-            entry.translated_text = translation
