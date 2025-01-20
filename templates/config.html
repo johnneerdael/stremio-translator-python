@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html class="sl-theme-dark">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+        <meta content="AI Subtitle Translator" property="og:title" />
+        <meta content="Translates subtitles using Google Gemini AI" property="og:description" />
+        <meta content="https://aitranslator.thepi.es" property="og:url" />
+        <meta content="/assets/logo.png" property="og:image" />
+        <title>AI Subtitle Translator - Configuration</title>
+        <link rel="icon" type="image/png" href="/assets/logo.png">
+
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/themes/dark.css" />
+        <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/shoelace-autoloader.js"></script>
+
+        <style>
+            body {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                margin: 0;
+                background: url('/assets/wallpaper.png') no-repeat center center fixed;
+                background-size: cover;
+                font-family: system-ui, -apple-system, "Segoe UI", Roboto;
+            }
+
+            .header {
+                text-align: center;
+                margin-bottom: 20px;
+                color: #fff;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .header img {
+                width: 100px;
+                height: 100px;
+                margin-bottom: 10px;
+            }
+
+            .form-container {
+                background-color: rgba(37, 41, 44, 0.95);
+                padding: 2rem;
+                border-radius: 0.375rem;
+                box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+                width: 80vw;
+                max-width: 600px;
+                margin-bottom: 50px;
+                backdrop-filter: blur(10px);
+            }
+
+            .form-item {
+                margin-bottom: 1rem;
+            }
+
+            .centered-item {
+                display: flex;
+                justify-content: center;
+                gap: 10px;
+                margin-top: 20px;
+            }
+
+            .version {
+                color: #6c757d;
+                font-size: 0.875rem;
+                margin-top: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <img src="/assets/logo.png" alt="AI Subtitle Translator">
+            <h1>AI Subtitle Translator</h1>
+            <p>Configure your subtitle translation settings</p>
+            <span class="version">v{{ version }}</span>
+        </div>
+
+        <div class="form-container">
+            <div class="form-item">
+                <sl-select id="translateTo" label="Translate To" value="{{ config.lang }}">
+                    {% for lang in languages %}
+                        <sl-option value="{{ lang.code }}">{{ lang.name }}</sl-option>
+                    {% endfor %}
+                </sl-select>
+            </div>
+
+            <div class="form-item">
+                <sl-input id="geminiApiKey" type="password" label="Google Gemini API Key" value="{{ config.key }}" placeholder="Enter your API key"></sl-input>
+            </div>
+
+            <div class="form-item">
+                <sl-input id="cacheTime" type="number" label="Cache Time (hours)" value="{{ config.cache }}" min="1" max="168"></sl-input>
+            </div>
+
+            <div class="form-item">
+                <sl-input id="maxConcurrent" type="number" label="Max Concurrent Translations" value="{{ config.concurrent }}" min="1" max="10"></sl-input>
+            </div>
+
+            <div class="form-item">
+                <sl-checkbox id="debugMode" {% if config.debug %}checked{% endif %}>Debug Mode</sl-checkbox>
+            </div>
+
+            <div class="centered-item">
+                <sl-button id="install" variant="primary">Install Addon</sl-button>
+                <sl-button id="copy-link" variant="neutral">Copy Link</sl-button>
+            </div>
+
+            <sl-alert id="installAlert" variant="primary" duration="3000" closable>
+                <sl-icon slot="icon" name="box-arrow-in-down"></sl-icon>
+                <strong>Installing addon in Stremio...</strong>
+            </sl-alert>
+
+            <sl-alert id="copyAlert" variant="neutral" duration="3000" closable>
+                <sl-icon slot="icon" name="clipboard-check"></sl-icon>
+                <strong>Addon link copied to clipboard</strong>
+            </sl-alert>
+
+            <script>
+                document.addEventListener('DOMContentLoaded', async () => {
+                    await Promise.allSettled([
+                        customElements.whenDefined('sl-button'),
+                        customElements.whenDefined('sl-alert'),
+                        customElements.whenDefined('sl-select'),
+                        customElements.whenDefined('sl-input'),
+                        customElements.whenDefined('sl-checkbox')
+                    ]);
+                });
+
+                function getSettings() {
+                    return {
+                        key: document.getElementById('geminiApiKey').value,
+                        lang: document.getElementById('translateTo').value,
+                        cache: parseInt(document.getElementById('cacheTime').value),
+                        concurrent: parseInt(document.getElementById('maxConcurrent').value),
+                        debug: document.getElementById('debugMode').checked
+                    };
+                }
+
+                document.getElementById('install').addEventListener('click', () => {
+                    const settings = getSettings();
+                    const settingsString = btoa(JSON.stringify(settings));
+                    window.location.href = `stremio://${window.location.host}/${settingsString}/manifest.json`;
+                    document.getElementById('installAlert').toast();
+                });
+
+                document.getElementById('copy-link').addEventListener('click', () => {
+                    const settings = getSettings();
+                    const settingsString = btoa(JSON.stringify(settings));
+                    const link = `${window.location.origin}/${settingsString}/manifest.json`;
+                    
+                    navigator.clipboard.writeText(link).then(() => {
+                        document.getElementById('copyAlert').toast();
+                    });
+                });
+            </script>
+        </div>
+    </body>
+</html>

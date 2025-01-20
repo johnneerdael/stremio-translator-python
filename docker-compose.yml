@@ -1,0 +1,22 @@
+services:
+  aitranslator:
+    container_name: aitranslator
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "7000:7000"
+    volumes:
+      - ./data:/app/data
+      - ./langs:/app/langs
+      - ./subtitles:/app/subtitles
+    environment:
+      - DEBUG=True
+      - BASE_DOMAIN=aitranslator.thepi.es
+    restart: on-failure:3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
