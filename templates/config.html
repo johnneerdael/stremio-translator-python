@@ -140,8 +140,7 @@
                     if (!settings) return;
                     
                     const settingsString = base64UrlEncode(JSON.stringify(settings));
-                    const domain = window.location.host;
-                    window.location.href = `stremio://${domain}/${settingsString}/manifest.json`;
+                    window.location.href = `stremio://{{ base_url.replace('https://', '').replace('http://', '') }}/manifest.json#${settingsString}`;
                     document.getElementById('installAlert').toast();
                 });
 
@@ -150,7 +149,7 @@
                     if (!settings) return;
                     
                     const settingsString = base64UrlEncode(JSON.stringify(settings));
-                    const link = `${window.location.origin}/${settingsString}/manifest.json`;
+                    const link = `{{ base_url }}/manifest.json#${settingsString}`;
                     
                     navigator.clipboard.writeText(link).then(() => {
                         document.getElementById('copyAlert').toast();

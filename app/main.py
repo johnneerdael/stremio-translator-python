@@ -41,14 +41,9 @@ def get_manifest(base_url: str):
         "version": "1.6.3",
         "name": "AI Subtitle Translator",
         "description": "Translates subtitles using Google Gemini AI",
-        "resources": [
-            {
-                "name": "subtitles",
-                "types": ["movie", "series"],
-                "idPrefixes": ["tt"]
-            }
-        ],
+        "resources": ["subtitles"],
         "types": ["movie", "series"],
+        "idPrefixes": ["tt"],
         "catalogs": [],
         "behaviorHints": {
             "configurable": True,
@@ -56,8 +51,7 @@ def get_manifest(base_url: str):
         },
         "logo": f"{base_url}/assets/logo.png",
         "background": f"{base_url}/assets/wallpaper.png",
-        "contactEmail": "johninNL@gmail.com",
-        "url": f"{base_url}/manifest.json"
+        "contactEmail": "johninNL@gmail.com"
     }
 
 class Config(BaseModel):
@@ -68,6 +62,9 @@ async def get_config(config_b64: Optional[str] = None) -> Config:
     """Get configuration from base64 or default values"""
     if config_b64:
         try:
+            # Remove any hash prefix
+            config_b64 = config_b64.lstrip('#')
+            
             # Add padding if needed
             padding = 4 - (len(config_b64) % 4)
             if padding != 4:
@@ -108,33 +105,20 @@ async def configure(request: Request):
         }
     )
 
-@app.get("/{config_b64}/configure")
-async def configure_with_config(request: Request, config_b64: str):
-    """Configuration page with existing config"""
-    config = await get_config(config_b64)
-    base_url = get_base_url()
-    manifest = get_manifest(base_url)
-    return templates.TemplateResponse(
-        "config.html",
-        {
-            "request": request,
-            "config": config,
-            "languages": get_languages(),
-            "version": manifest["version"],
-            "base_url": base_url
-        }
-    )
-
 @app.get("/manifest.json")
-@app.get("/{config_b64}/manifest.json")
-async def manifest(request: Request, config_b64: Optional[str] = None):
-    """Manifest endpoint"""
+async def manifest(request: Request):
+    """Manifest endpoint that handles hash fragment config"""
     base_url = get_base_url()
     manifest_data = get_manifest(base_url)
     
-    # Add config-specific URL if config is provided
-    if config_b64:
-        manifest_data["url"] = f"{base_url}/{config_b64}/manifest.json"
+    # Get config from hash fragment if present
+    if '#' in request.url.path:
+        config_b64 = request.url.path.split('#', 1)[1]
+        config = await get_config(config_b64)
+        if config.key and config.lang:
+            # Add transportUrl with config
+            domain = base_url.replace("https://", "").replace("http://", "")
+            manifest_data["transportUrl"] = f"http://{domain}/{config_b64}/manifest.json"
     
     return JSONResponse(manifest_data)
 
