@@ -79,33 +79,8 @@
         </div>
 
         <div class="form-container">
-            <div class="form-item">
-                <sl-select id="translateTo" label="Translate To" value="{{ config.lang }}">
-                    {% for lang in languages %}
-                        <sl-option value="{{ lang.code }}">{{ lang.name }}</sl-option>
-                    {% endfor %}
-                </sl-select>
-            </div>
-
-            <div class="form-item">
-                <sl-input id="geminiApiKey" type="password" label="Google Gemini API Key" value="{{ config.key }}" placeholder="Enter your API key"></sl-input>
-            </div>
-
-            <div class="form-item">
-                <sl-input id="cacheTime" type="number" label="Cache Time (hours)" value="{{ config.cache }}" min="1" max="168"></sl-input>
-            </div>
-
-            <div class="form-item">
-                <sl-input id="maxConcurrent" type="number" label="Max Concurrent Translations" value="{{ config.concurrent }}" min="1" max="10"></sl-input>
-            </div>
-
-            <div class="form-item">
-                <sl-checkbox id="debugMode" {% if config.debug %}checked{% endif %}>Debug Mode</sl-checkbox>
-            </div>
-
             <div class="centered-item">
                 <sl-button id="install" variant="primary">Install Addon</sl-button>
-                <sl-button id="copy-link" variant="neutral">Copy Link</sl-button>
             </div>
 
             <sl-alert id="installAlert" variant="primary" duration="3000" closable>
@@ -113,50 +88,17 @@
                 <strong>Installing addon in Stremio...</strong>
             </sl-alert>
 
-            <sl-alert id="copyAlert" variant="neutral" duration="3000" closable>
-                <sl-icon slot="icon" name="clipboard-check"></sl-icon>
-                <strong>Addon link copied to clipboard</strong>
-            </sl-alert>
-
             <script>
-                const BASE_URL = "{{ base_url }}";
-
                 document.addEventListener('DOMContentLoaded', async () => {
                     await Promise.allSettled([
                         customElements.whenDefined('sl-button'),
-                        customElements.whenDefined('sl-alert'),
-                        customElements.whenDefined('sl-select'),
-                        customElements.whenDefined('sl-input'),
-                        customElements.whenDefined('sl-checkbox')
+                        customElements.whenDefined('sl-alert')
                     ]);
                 });
 
-                function getSettings() {
-                    return {
-                        key: document.getElementById('geminiApiKey').value,
-                        lang: document.getElementById('translateTo').value,
-                        cache: parseInt(document.getElementById('cacheTime').value),
-                        concurrent: parseInt(document.getElementById('maxConcurrent').value),
-                        debug: document.getElementById('debugMode').checked
-                    };
-                }
-
                 document.getElementById('install').addEventListener('click', () => {
-                    const settings = getSettings();
-                    const settingsString = btoa(JSON.stringify(settings));
-                    const domain = BASE_URL.replace(/^https?:\/\//, '');
-                    window.location.href = `stremio://${domain}/${settingsString}/manifest.json`;
+                    window.location.href = `stremio://${window.location.host}/manifest.json`;
                     document.getElementById('installAlert').toast();
-                });
-
-                document.getElementById('copy-link').addEventListener('click', () => {
-                    const settings = getSettings();
-                    const settingsString = btoa(JSON.stringify(settings));
-                    const link = `${BASE_URL}/${settingsString}/manifest.json`;
-                    
-                    navigator.clipboard.writeText(link).then(() => {
-                        document.getElementById('copyAlert').toast();
-                    });
                 });
             </script>
         </div>

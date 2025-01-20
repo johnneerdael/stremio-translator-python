@@ -34,21 +34,54 @@ def get_base_url():
 
 # Manifest definition
 def get_manifest(base_url: str):
+    domain = base_url.replace("https://", "").replace("http://", "")
     return {
         "id": "org.stremio.aitranslator",
         "version": "1.6.3",
         "name": "AI Subtitle Translator",
         "description": "Translates subtitles using Google Gemini AI",
-        "types": ["movie", "series"],
         "resources": ["subtitles"],
+        "types": ["movie", "series"],
         "catalogs": [],
         "idPrefixes": ["tt"],
+        "logo": f"{base_url}/assets/logo.png",
+        "background": f"{base_url}/assets/wallpaper.png",
         "behaviorHints": {
             "configurable": True,
             "configurationRequired": True
         },
-        "logo": f"{base_url}/assets/logo.png",
-        "background": f"{base_url}/assets/wallpaper.png"
+        "config": [
+            {
+                "key": "key",
+                "type": "password",
+                "title": "Google Gemini API Key",
+                "required": True
+            },
+            {
+                "key": "lang",
+                "type": "select",
+                "title": "Target Language",
+                "options": [lang["code"] for lang in get_languages()],
+                "required": True
+            },
+            {
+                "key": "cache",
+                "type": "number",
+                "title": "Cache Time (hours)",
+                "default": "24"
+            },
+            {
+                "key": "concurrent",
+                "type": "number",
+                "title": "Max Concurrent Translations",
+                "default": "3"
+            },
+            {
+                "key": "debug",
+                "type": "checkbox",
+                "title": "Debug Mode"
+            }
+        ]
     }
 
 class Config(BaseModel):
@@ -115,8 +148,9 @@ async def configure_with_config(request: Request, config_b64: str):
         }
     )
 
+@app.get("/manifest.json")
 @app.get("/{config_b64}/manifest.json")
-async def manifest(request: Request, config_b64: str):
+async def manifest(request: Request, config_b64: Optional[str] = None):
     """Manifest endpoint"""
     base_url = get_base_url()
     manifest_data = get_manifest(base_url)
