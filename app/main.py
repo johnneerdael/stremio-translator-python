@@ -40,22 +40,20 @@ def get_manifest(base_url: str, config_b64: Optional[str] = None):
         "version": "1.6.3",
         "name": "AI Subtitle Translator",
         "description": "Translates subtitles using Google Gemini AI",
-        "resources": [
-            {
-                "name": "subtitles",
-                "types": ["movie", "series"],
-                "idPrefixes": ["tt"]
-            }
-        ],
+        "resources": ["subtitles"],
         "types": ["movie", "series"],
         "catalogs": [],
+        "idPrefixes": ["tt"],
         "logo": f"{base_url}/assets/logo.png",
         "background": f"{base_url}/assets/wallpaper.png",
         "contactEmail": "johninNL@gmail.com"
     }
 
-    # Add behaviorHints only if no config is provided
-    if not config_b64:
+    if config_b64:
+        # Add configured URL
+        manifest["url"] = f"{base_url}/{config_b64}/manifest.json"
+    else:
+        # Add configuration hints
         manifest["behaviorHints"] = {
             "configurable": True,
             "configurationRequired": True
