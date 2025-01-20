@@ -4,7 +4,7 @@ from typing import List, Dict, Optional
 from pathlib import Path
 import asyncio
 from datetime import datetime, timedelta
-from pythonopensubtitles import OpenSubtitles
+from pythonopensubtitles.opensubtitles import OpenSubtitles
 from pythonopensubtitles.utils import File
 
 class SubtitleEntry:
