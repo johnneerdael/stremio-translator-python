@@ -26,23 +26,30 @@ templates = Jinja2Templates(directory="templates")
 CACHE_DIR = Path("subtitles")
 CACHE_DIR.mkdir(exist_ok=True)
 
+def get_base_url():
+    """Get base URL from environment or default"""
+    domain = os.getenv("BASE_DOMAIN", "localhost:7000")
+    protocol = "https" if "localhost" not in domain else "http"
+    return f"{protocol}://{domain}"
+
 # Manifest definition
-MANIFEST = {
-    "id": "org.stremio.aitranslator",
-    "version": "1.6.3",
-    "name": "AI Subtitle Translator",
-    "description": "Translates subtitles using Google Gemini AI",
-    "types": ["movie", "series"],
-    "resources": ["subtitles"],
-    "catalogs": [],
-    "idPrefixes": ["tt"],
-    "behaviorHints": {
-        "configurable": True,
-        "configurationRequired": True
-    },
-    "logo": "assets/logo.png",
-    "background": "assets/wallpaper.png"
-}
+def get_manifest(base_url: str):
+    return {
+        "id": "org.stremio.aitranslator",
+        "version": "1.6.3",
+        "name": "AI Subtitle Translator",
+        "description": "Translates subtitles using Google Gemini AI",
+        "types": ["movie", "series"],
+        "resources": ["subtitles"],
+        "catalogs": [],
+        "idPrefixes": ["tt"],
+        "behaviorHints": {
+            "configurable": True,
+            "configurationRequired": True
+        },
+        "logo": f"{base_url}/assets/logo.png",
+        "background": f"{base_url}/assets/wallpaper.png"
+    }
 
 class Config(BaseModel):
     key: Optional[str] = None
@@ -78,13 +85,16 @@ async def root():
 @app.get("/configure")
 async def configure(request: Request):
     """Configuration page"""
+    base_url = get_base_url()
+    manifest = get_manifest(base_url)
     return templates.TemplateResponse(
         "config.html",
         {
             "request": request,
             "config": Config(),
             "languages": get_languages(),
-            "version": MANIFEST["version"]
+            "version": manifest["version"],
+            "base_url": base_url
         }
     )
 
@@ -92,20 +102,25 @@ async def configure(request: Request):
 async def configure_with_config(request: Request, config_b64: str):
     """Configuration page with existing config"""
     config = await get_config(config_b64)
+    base_url = get_base_url()
+    manifest = get_manifest(base_url)
     return templates.TemplateResponse(
         "config.html",
         {
             "request": request,
             "config": config,
             "languages": get_languages(),
-            "version": MANIFEST["version"]
+            "version": manifest["version"],
+            "base_url": base_url
         }
     )
 
 @app.get("/{config_b64}/manifest.json")
-async def manifest(config_b64: str):
+async def manifest(request: Request, config_b64: str):
     """Manifest endpoint"""
-    return JSONResponse(MANIFEST)
+    base_url = get_base_url()
+    manifest_data = get_manifest(base_url)
+    return JSONResponse(manifest_data)
 
 @app.get("/{config_b64}/subtitles/{type}/{id}/{video_hash}.json")
 async def subtitles(config_b64: str, type: str, id: str, video_hash: str):

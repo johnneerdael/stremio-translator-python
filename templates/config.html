@@ -5,10 +5,10 @@
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
         <meta content="AI Subtitle Translator" property="og:title" />
         <meta content="Translates subtitles using Google Gemini AI" property="og:description" />
-        <meta content="https://aitranslator.thepi.es" property="og:url" />
-        <meta content="/assets/logo.png" property="og:image" />
+        <meta content="{{ base_url }}" property="og:url" />
+        <meta content="{{ base_url }}/assets/logo.png" property="og:image" />
         <title>AI Subtitle Translator - Configuration</title>
-        <link rel="icon" type="image/png" href="/assets/logo.png">
+        <link rel="icon" type="image/png" href="{{ base_url }}/assets/logo.png">
 
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/themes/dark.css" />
         <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/shoelace-autoloader.js"></script>
@@ -21,7 +21,7 @@
                 align-items: center;
                 min-height: 100vh;
                 margin: 0;
-                background: url('/assets/wallpaper.png') no-repeat center center fixed;
+                background: url('{{ base_url }}/assets/wallpaper.png') no-repeat center center fixed;
                 background-size: cover;
                 font-family: system-ui, -apple-system, "Segoe UI", Roboto;
             }
@@ -72,7 +72,7 @@
     </head>
     <body>
         <div class="header">
-            <img src="/assets/logo.png" alt="AI Subtitle Translator">
+            <img src="{{ base_url }}/assets/logo.png" alt="AI Subtitle Translator">
             <h1>AI Subtitle Translator</h1>
             <p>Configure your subtitle translation settings</p>
             <span class="version">v{{ version }}</span>
@@ -119,6 +119,8 @@
             </sl-alert>
 
             <script>
+                const BASE_URL = "{{ base_url }}";
+
                 document.addEventListener('DOMContentLoaded', async () => {
                     await Promise.allSettled([
                         customElements.whenDefined('sl-button'),
@@ -142,14 +144,15 @@
                 document.getElementById('install').addEventListener('click', () => {
                     const settings = getSettings();
                     const settingsString = btoa(JSON.stringify(settings));
-                    window.location.href = `stremio://${window.location.host}/${settingsString}/manifest.json`;
+                    const domain = BASE_URL.replace(/^https?:\/\//, '');
+                    window.location.href = `stremio://${domain}/${settingsString}/manifest.json`;
                     document.getElementById('installAlert').toast();
                 });
 
                 document.getElementById('copy-link').addEventListener('click', () => {
                     const settings = getSettings();
                     const settingsString = btoa(JSON.stringify(settings));
-                    const link = `${window.location.origin}/${settingsString}/manifest.json`;
+                    const link = `${BASE_URL}/${settingsString}/manifest.json`;
                     
                     navigator.clipboard.writeText(link).then(() => {
                         document.getElementById('copyAlert').toast();
