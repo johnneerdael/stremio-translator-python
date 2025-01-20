@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from urllib.parse import unquote, quote
 from .subtitles import SubtitleProcessor
 from .translation import TranslationManager
-from .languages import get_languages, is_language_supported
+from .languages import get_languages, is_language_supported, get_language_name
 
 # Initialize FastAPI
 app = FastAPI(debug=True)
@@ -217,7 +217,7 @@ async def subtitles(
                 print("No embedded subtitles found, showing loading message")
                 response_subtitles.append({
                     "id": "loading",
-                    "lang": config.lang,  # Target translation language
+                    "lang": config.lang,  # Keep language code for loading message
                     "url": f"{get_base_url()}/loading.srt"
                 })
             return JSONResponse({"subtitles": response_subtitles})
@@ -272,7 +272,7 @@ async def subtitles(
         print(f"Adding translated subtitle URL: {translated_url}")
         response_subtitles.append({
             "id": f"translated-{config.lang}",  # Unique identifier with language
-            "lang": config.lang,                # Target language code
+            "lang": config.lang,                # Keep language code for consistency
             "url": translated_url
         })
 
