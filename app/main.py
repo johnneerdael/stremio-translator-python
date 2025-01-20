@@ -33,9 +33,9 @@ def get_base_url():
     return f"{protocol}://{domain}"
 
 # Manifest definition
-def get_manifest(base_url: str):
+def get_manifest(base_url: str, config_b64: Optional[str] = None):
     domain = base_url.replace("https://", "").replace("http://", "")
-    return {
+    manifest = {
         "id": "org.stremio.aitranslator",
         "version": "1.6.3",
         "name": "AI Subtitle Translator",
@@ -49,15 +49,20 @@ def get_manifest(base_url: str):
         ],
         "types": ["movie", "series"],
         "catalogs": [],
-        "behaviorHints": {
-            "configurable": True,
-            "configurationRequired": True
-        },
         "logo": f"{base_url}/assets/logo.png",
         "background": f"{base_url}/assets/wallpaper.png",
-        "contactEmail": "johninNL@gmail.com",
-        "url": f"{base_url}/manifest.json"
+        "contactEmail": "johninNL@gmail.com"
     }
+
+    # Add behaviorHints only if no config is provided
+    if not config_b64:
+        manifest["behaviorHints"] = {
+            "configurable": True,
+            "configurationRequired": True
+        }
+        manifest["configurationURL"] = f"{base_url}/configure"
+    
+    return manifest
 
 class Config(BaseModel):
     key: Optional[str] = None
@@ -129,12 +134,7 @@ async def configure_with_config(request: Request, config_b64: str):
 async def manifest(request: Request, config_b64: Optional[str] = None):
     """Manifest endpoint"""
     base_url = get_base_url()
-    manifest_data = get_manifest(base_url)
-    
-    # Add config-specific URL if config is provided
-    if config_b64:
-        manifest_data["url"] = f"{base_url}/{config_b64}/manifest.json"
-    
+    manifest_data = get_manifest(base_url, config_b64)
     return JSONResponse(manifest_data)
 
 @app.get("/{config_b64}/subtitles/{type}/{id}/{video_hash}.json")
