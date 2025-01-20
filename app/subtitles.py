@@ -20,8 +20,10 @@ class SubtitleEntry:
         }
 
 class SubtitleProcessor:
-    def __init__(self):
+    def __init__(self, username: str, password: str):
         self.opensubtitles = OpenSubtitles()
+        self.username = username
+        self.password = password
         self.batch_size = 15  # Free tier: 15 requests per second
         self.window_size = 60  # 1 minute window
         self.last_batch_time = datetime.now()
@@ -31,8 +33,8 @@ class SubtitleProcessor:
     async def fetch_subtitles(self, type: str, id: str) -> List[SubtitleEntry]:
         """Fetch subtitles from OpenSubtitles"""
         try:
-            # Login to OpenSubtitles (required)
-            self.opensubtitles.login()
+            # Login to OpenSubtitles with credentials
+            self.opensubtitles.login(self.username, self.password)
             
             # Search for subtitles
             subtitles = self.opensubtitles.search_subtitles([{

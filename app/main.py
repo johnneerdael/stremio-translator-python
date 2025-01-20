@@ -17,8 +17,15 @@ from .languages import get_languages, is_language_supported
 # Initialize FastAPI
 app = FastAPI(debug=True)
 
-# Mount static files
+# Mount static files and loading subtitle
 app.mount("/assets", StaticFiles(directory=Path(__file__).parent / "assets"), name="assets")
+
+@app.get("/loading.srt")
+async def loading_subtitle():
+    """Serve the loading subtitle file"""
+    loading_path = Path(__file__).parent / "assets" / "loading.srt"
+    with open(loading_path, "r", encoding="utf-8") as f:
+        return f.read()
 
 # Initialize templates
 templates = Jinja2Templates(directory="templates")
