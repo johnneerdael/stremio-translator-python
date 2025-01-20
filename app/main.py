@@ -153,13 +153,22 @@ async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
             raise HTTPException(status_code=400, detail="Target language not configured")
             
         if not config.username or not config.password:
-            # Return loading subtitle if credentials not configured
+            # If no credentials, check if English subtitles are included in stream
             return JSONResponse({
-                "subtitles": [{
-                    "id": "loading",
-                    "lang": config.lang,
-                    "url": f"{get_base_url()}/loading.srt"
-                }]
+                "subtitles": [
+                    # First try English subtitles from stream
+                    {
+                        "id": "included",
+                        "lang": "eng",
+                        "url": None  # This tells Stremio to use embedded subtitles
+                    },
+                    # Fallback to loading message
+                    {
+                        "id": "loading",
+                        "lang": config.lang,
+                        "url": f"{get_base_url()}/loading.srt"
+                    }
+                ]
             })
         
         # Initialize processors

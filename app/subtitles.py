@@ -36,16 +36,40 @@ class SubtitleProcessor:
             # Login to OpenSubtitles with credentials
             self.opensubtitles.login(self.username, self.password)
             
-            # Search for subtitles
-            subtitles = self.opensubtitles.search_subtitles([{
+            # Parse IMDB ID and episode info if series
+            imdb_id = id
+            season = None
+            episode = None
+            if type == 'series' and ':' in id:
+                parts = id.split(':')
+                imdb_id = parts[0]
+                if len(parts) > 2:
+                    season = parts[1]
+                    episode = parts[2]
+
+            # Build search query
+            search_query = {
                 'sublanguageid': 'eng',
-                'idmovie': id,
-                'type': type
-            }])
+                'imdbid': imdb_id.replace('tt', ''),  # OpenSubtitles expects ID without 'tt'
+            }
+            
+            if type == 'series' and season and episode:
+                search_query.update({
+                    'season': season,
+                    'episode': episode
+                })
+
+            print(f"OpenSubtitles search query: {json.dumps(search_query, indent=2)}")
+            
+            # Search for subtitles
+            subtitles = self.opensubtitles.search_subtitles([search_query])
+            print(f"OpenSubtitles search results: {json.dumps(subtitles, indent=2) if subtitles else 'No results'}")
             
             # Download the first matching subtitle
             if subtitles:
-                subtitle_id = subtitles[0]['IDSubtitleFile']
+                subtitle_id = subtitles[0].get('IDSubtitleFile')
+                if not subtitle_id:
+                    raise Exception(f"Invalid subtitle response: {json.dumps(subtitles[0], indent=2)}")
                 subtitle_path = self.opensubtitles.download_subtitles([subtitle_id], extension='srt')
                 
                 # Parse the downloaded SRT file
