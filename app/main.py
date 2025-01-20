@@ -34,7 +34,7 @@ def get_base_url():
     return f"{protocol}://{domain}"
 
 # Manifest definition
-def get_manifest(base_url: str):
+def get_manifest(base_url: str, config_b64: Optional[str] = None):
     domain = base_url.replace("https://", "").replace("http://", "")
     manifest = {
         "id": "org.stremio.aitranslator",
@@ -47,27 +47,13 @@ def get_manifest(base_url: str):
         "catalogs": [],
         "logo": f"{base_url}/assets/logo.png",
         "background": f"{base_url}/assets/wallpaper.png",
-        "contactEmail": "johninNL@gmail.com",
-        "config": [
-            {
-                "key": "key",
-                "type": "password",
-                "title": "Google Gemini API Key",
-                "required": True
-            },
-            {
-                "key": "lang",
-                "type": "select",
-                "title": "Target Language",
-                "options": [lang["code"] for lang in get_languages()],
-                "required": True
-            }
-        ],
-        "behaviorHints": {
-            "configurable": True,
-            "configurationRequired": True
-        }
+        "contactEmail": "johninNL@gmail.com"
     }
+    
+    # Add transportUrl if config is provided
+    if config_b64:
+        manifest["transportUrl"] = f"http://{domain}/{config_b64}/manifest.json"
+    
     return manifest
 
 class Config(BaseModel):
@@ -136,10 +122,11 @@ async def configure_with_config(request: Request, config_b64: str):
     )
 
 @app.get("/manifest.json")
-async def manifest(request: Request):
+@app.get("/{config_b64}/manifest.json")
+async def manifest(request: Request, config_b64: Optional[str] = None):
     """Manifest endpoint"""
     base_url = get_base_url()
-    manifest_data = get_manifest(base_url)
+    manifest_data = get_manifest(base_url, config_b64)
     return JSONResponse(manifest_data)
 
 @app.get("/{config_b64}/subtitles/{type}/{id}/{video_hash}.json")

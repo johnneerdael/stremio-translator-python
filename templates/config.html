@@ -52,6 +52,10 @@
                 backdrop-filter: blur(10px);
             }
 
+            .form-item {
+                margin-bottom: 1rem;
+            }
+
             .centered-item {
                 display: flex;
                 justify-content: center;
@@ -75,6 +79,18 @@
         </div>
 
         <div class="form-container">
+            <div class="form-item">
+                <sl-select id="translateTo" label="Translate To" value="{{ config.lang }}">
+                    {% for lang in languages %}
+                        <sl-option value="{{ lang.code }}">{{ lang.name }}</sl-option>
+                    {% endfor %}
+                </sl-select>
+            </div>
+
+            <div class="form-item">
+                <sl-input id="geminiApiKey" type="password" label="Google Gemini API Key" value="{{ config.key }}" placeholder="Enter your API key"></sl-input>
+            </div>
+
             <div class="centered-item">
                 <sl-button id="install" variant="primary">Install Addon</sl-button>
             </div>
@@ -82,12 +98,34 @@
             <script>
                 document.addEventListener('DOMContentLoaded', async () => {
                     await Promise.allSettled([
-                        customElements.whenDefined('sl-button')
+                        customElements.whenDefined('sl-button'),
+                        customElements.whenDefined('sl-select'),
+                        customElements.whenDefined('sl-input')
                     ]);
                 });
 
+                function getSettings() {
+                    const key = document.getElementById('geminiApiKey').value;
+                    const lang = document.getElementById('translateTo').value;
+                    
+                    if (!key || !lang) {
+                        alert('Please enter both API key and language');
+                        return null;
+                    }
+                    
+                    return { key, lang };
+                }
+
                 document.getElementById('install').addEventListener('click', () => {
-                    window.location.href = `stremio://{{ base_url.replace('https://', '').replace('http://', '') }}/manifest.json`;
+                    const settings = getSettings();
+                    if (!settings) return;
+                    
+                    const settingsString = btoa(JSON.stringify(settings))
+                        .replace(/\+/g, '-')
+                        .replace(/\//g, '_')
+                        .replace(/=+$/, '');
+                    
+                    window.location.href = `stremio://${window.location.host}/${settingsString}/manifest.json`;
                 });
             </script>
         </div>
