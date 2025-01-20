@@ -138,7 +138,7 @@ async def manifest(request: Request, config_b64: Optional[str] = None):
     return JSONResponse(manifest_data)
 
 @app.get("/{config_b64}/subtitles/{type}/{id}/{video_hash}.json")
-@app.get("/{config_b64}/subtitles/{cache_key}/translated.srt")
+@app.get("/subtitles/{cache_key}/translated.srt")
 async def subtitles(
     config_b64: str,
     type: str = None,
@@ -203,13 +203,23 @@ async def subtitles(
 
         # Check for embedded subtitles
         print("Checking for English subtitles in stream...")
+        print(f"Stream metadata: {json.dumps(stream_info, indent=2)}")
+        
+        # Check if stream has embedded subtitles
+        has_embedded = False
         if stream_info.get('filename'):
-            print("Stream has embedded subtitles, adding as primary option")
-            response_subtitles.append({
-                "id": "eng-embedded",  # Unique identifier
-                "lang": "eng",         # ISO 639-2 code
-                "url": None            # Null URL for embedded subtitles
-            })
+            # Look for common subtitle indicators in filename
+            filename = stream_info['filename'].lower()
+            has_embedded = any(x in filename for x in ['.srt', 'sub', 'dubbed', 'multi'])
+            print(f"Checking filename '{filename}' for subtitle indicators: {has_embedded}")
+            
+            if has_embedded:
+                print("Stream has embedded English subtitles, adding as primary option")
+                response_subtitles.append({
+                    "id": "eng-embedded",  # Unique identifier
+                    "lang": "eng",         # ISO 639-2 code
+                    "url": None            # Null URL for embedded subtitles
+                })
 
         if not config.opensubtitles_key:
             print("No OpenSubtitles API key configured")
@@ -268,7 +278,7 @@ async def subtitles(
             asyncio.create_task(process_remaining())
         
         # Add translated subtitles as an option after embedded ones
-        translated_url = f"{get_base_url()}/{config_b64}/subtitles/{url_cache_key}/translated.srt"
+        translated_url = f"{get_base_url()}/subtitles/{url_cache_key}/translated.srt"
         print(f"Adding translated subtitle URL: {translated_url}")
         response_subtitles.append({
             "id": f"translated-{config.lang}",  # Unique identifier with language
