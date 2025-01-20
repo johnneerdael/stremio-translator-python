@@ -9,7 +9,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional, Dict
 from pydantic import BaseModel
-from urllib.parse import unquote
+from urllib.parse import unquote, quote
 from .subtitles import SubtitleProcessor
 from .translation import TranslationManager
 from .languages import get_languages, is_language_supported
@@ -25,7 +25,11 @@ async def loading_subtitle():
     """Serve the loading subtitle file"""
     loading_path = Path(__file__).parent / "assets" / "loading.srt"
     with open(loading_path, "r", encoding="utf-8") as f:
-        return f.read()
+        return Response(
+            content=f.read(),
+            media_type="application/x-subrip",
+            headers={"Content-Disposition": "attachment; filename=loading.srt"}
+        )
 
 # Initialize templates
 templates = Jinja2Templates(directory="templates")
@@ -148,13 +152,15 @@ async def subtitles(
         
         # Handle translated.srt request
         if cache_key:
-            srt_path = CACHE_DIR / f"{cache_key}.srt"
+            # Convert URL-encoded cache key back to filesystem-safe format
+            fs_cache_key = cache_key.replace('%3A', ':')
+            srt_path = CACHE_DIR / f"{fs_cache_key}.srt"
             if not srt_path.exists():
                 raise HTTPException(status_code=404, detail="Subtitle not found")
             return Response(
                 content=srt_path.read_text(),
                 media_type="application/x-subrip",
-                headers={"Content-Disposition": f"attachment; filename={cache_key}.srt"}
+                headers={"Content-Disposition": f"attachment; filename={fs_cache_key}.srt"}
             )
 
         # Handle subtitle list request
@@ -223,10 +229,12 @@ async def subtitles(
         )
         translation_manager = TranslationManager(config.key, config.lang)
         
-        # Use a cache key that's unique to the content but not the specific file
-        # This ensures we reuse subtitles for the same content across different files
-        cache_key = f"{type}-{id.split('&')[0]}"  # Remove filename from cache key
-        cache_path = CACHE_DIR / f"{cache_key}.json"
+        # Create cache key from type and ID
+        base_id = id.split('&')[0]  # Remove filename from ID
+        fs_cache_key = f"{type}-{base_id}"  # Filesystem-safe format
+        url_cache_key = quote(fs_cache_key)  # URL-encoded format
+        
+        cache_path = CACHE_DIR / f"{fs_cache_key}.json"
         cached = subtitle_processor.load_cache(cache_path)
         if cached:
             return JSONResponse(cached)
@@ -260,7 +268,7 @@ async def subtitles(
             asyncio.create_task(process_remaining())
         
         # Add translated subtitles as an option after embedded ones
-        translated_url = f"{get_base_url()}/{config_b64}/subtitles/{cache_key}/translated.srt"
+        translated_url = f"{get_base_url()}/{config_b64}/subtitles/{url_cache_key}/translated.srt"
         print(f"Adding translated subtitle URL: {translated_url}")
         response_subtitles.append({
             "id": f"translated-{config.lang}",  # Unique identifier with language
@@ -269,7 +277,7 @@ async def subtitles(
         })
 
         # Save SRT content and response separately
-        srt_path = CACHE_DIR / f"{cache_key}.srt"
+        srt_path = CACHE_DIR / f"{fs_cache_key}.srt"
         srt_content = "\n\n".join(
             f"{i+1}\n{entry.start//1000//3600:02d}:{entry.start//1000%3600//60:02d}:{entry.start//1000%60:02d},{entry.start%1000:03d} --> "
             f"{entry.start//1000//3600:02d}:{entry.start//1000%3600//60:02d}:{entry.start//1000%60:02d},{entry.start%1000:03d}\n"
