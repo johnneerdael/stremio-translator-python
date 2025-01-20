@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import base64
@@ -151,7 +151,11 @@ async def subtitles(
             srt_path = CACHE_DIR / f"{cache_key}.srt"
             if not srt_path.exists():
                 raise HTTPException(status_code=404, detail="Subtitle not found")
-            return srt_path.read_text()
+            return Response(
+                content=srt_path.read_text(),
+                media_type="application/x-subrip",
+                headers={"Content-Disposition": f"attachment; filename={cache_key}.srt"}
+            )
 
         # Handle subtitle list request
         video_hash = unquote(video_hash).split('.json')[0]  # Remove .json and decode
@@ -256,10 +260,12 @@ async def subtitles(
             asyncio.create_task(process_remaining())
         
         # Add translated subtitles as an option after embedded ones
+        translated_url = f"{get_base_url()}/{config_b64}/subtitles/{cache_key}/translated.srt"
+        print(f"Adding translated subtitle URL: {translated_url}")
         response_subtitles.append({
             "id": f"translated-{config.lang}",  # Unique identifier with language
             "lang": config.lang,                # Target language code
-            "url": f"{get_base_url()}/subtitles/{cache_key}/translated.srt"
+            "url": translated_url
         })
 
         # Save SRT content and response separately
