@@ -91,18 +91,6 @@
                 <sl-input id="geminiApiKey" type="password" label="Google Gemini API Key" value="{{ config.key }}" placeholder="Enter your API key"></sl-input>
             </div>
 
-            <div class="form-item">
-                <sl-input id="cacheTime" type="number" label="Cache Time (hours)" value="{{ config.cache }}" min="1" max="168"></sl-input>
-            </div>
-
-            <div class="form-item">
-                <sl-input id="maxConcurrent" type="number" label="Max Concurrent Translations" value="{{ config.concurrent }}" min="1" max="10"></sl-input>
-            </div>
-
-            <div class="form-item">
-                <sl-checkbox id="debugMode" {% if config.debug %}checked{% endif %}>Debug Mode</sl-checkbox>
-            </div>
-
             <div class="centered-item">
                 <sl-button id="install" variant="primary">Install Addon</sl-button>
                 <sl-button id="copy-link" variant="neutral">Copy Link</sl-button>
@@ -124,24 +112,27 @@
                         customElements.whenDefined('sl-button'),
                         customElements.whenDefined('sl-alert'),
                         customElements.whenDefined('sl-select'),
-                        customElements.whenDefined('sl-input'),
-                        customElements.whenDefined('sl-checkbox')
+                        customElements.whenDefined('sl-input')
                     ]);
                 });
 
                 function getSettings() {
                     return {
                         key: document.getElementById('geminiApiKey').value,
-                        lang: document.getElementById('translateTo').value,
-                        cache: parseInt(document.getElementById('cacheTime').value),
-                        concurrent: parseInt(document.getElementById('maxConcurrent').value),
-                        debug: document.getElementById('debugMode').checked
+                        lang: document.getElementById('translateTo').value
                     };
+                }
+
+                function base64UrlEncode(str) {
+                    return btoa(str)
+                        .replace(/\+/g, '-')
+                        .replace(/\//g, '_')
+                        .replace(/=+$/, '');
                 }
 
                 document.getElementById('install').addEventListener('click', () => {
                     const settings = getSettings();
-                    const settingsString = btoa(JSON.stringify(settings));
+                    const settingsString = base64UrlEncode(JSON.stringify(settings));
                     const domain = window.location.host;
                     window.location.href = `stremio://${domain}/${settingsString}/manifest.json`;
                     document.getElementById('installAlert').toast();
@@ -149,7 +140,7 @@
 
                 document.getElementById('copy-link').addEventListener('click', () => {
                     const settings = getSettings();
-                    const settingsString = btoa(JSON.stringify(settings));
+                    const settingsString = base64UrlEncode(JSON.stringify(settings));
                     const link = `${window.location.origin}/${settingsString}/manifest.json`;
                     
                     navigator.clipboard.writeText(link).then(() => {

@@ -49,27 +49,30 @@ def get_manifest(base_url: str):
         ],
         "types": ["movie", "series"],
         "catalogs": [],
-        "logo": f"{base_url}/assets/logo.png",
-        "background": f"{base_url}/assets/wallpaper.png",
         "behaviorHints": {
             "configurable": True,
             "configurationRequired": True
-        }
+        },
+        "logo": f"{base_url}/assets/logo.png",
+        "background": f"{base_url}/assets/wallpaper.png",
+        "contactEmail": "johninNL@gmail.com",
+        "url": f"{base_url}/manifest.json"
     }
 
 class Config(BaseModel):
     key: Optional[str] = None
     lang: Optional[str] = None
-    cache: Optional[int] = 24
-    concurrent: Optional[int] = 3
-    debug: Optional[bool] = False
-    start_time: Optional[int] = 0  # Start time in milliseconds
 
 async def get_config(config_b64: Optional[str] = None) -> Config:
     """Get configuration from base64 or default values"""
     if config_b64:
         try:
-            config_json = base64.b64decode(config_b64).decode()
+            # Add padding if needed
+            padding = 4 - (len(config_b64) % 4)
+            if padding != 4:
+                config_b64 += '=' * padding
+            
+            config_json = base64.urlsafe_b64decode(config_b64).decode()
             config = Config.parse_raw(config_json)
             if not is_language_supported(config.lang):
                 raise ValueError(f"Unsupported language: {config.lang}")
@@ -127,6 +130,11 @@ async def manifest(request: Request, config_b64: Optional[str] = None):
     """Manifest endpoint"""
     base_url = get_base_url()
     manifest_data = get_manifest(base_url)
+    
+    # Add config-specific URL if config is provided
+    if config_b64:
+        manifest_data["url"] = f"{base_url}/{config_b64}/manifest.json"
+    
     return JSONResponse(manifest_data)
 
 @app.get("/{config_b64}/subtitles/{type}/{id}/{video_hash}.json")
@@ -155,7 +163,7 @@ async def subtitles(config_b64: str, type: str, id: str, video_hash: str):
         entries = await subtitle_processor.fetch_subtitles(type, id)
         
         # Split into priority batches based on start time
-        batches = subtitle_processor.prioritize_subtitles(entries, config.start_time or 0)
+        batches = subtitle_processor.prioritize_subtitles(entries)
         
         # Process first batch immediately (buffer time from start point)
         if batches:
