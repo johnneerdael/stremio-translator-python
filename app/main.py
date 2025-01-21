@@ -247,8 +247,19 @@ async def subtitles(
         if cached:
             return JSONResponse(cached)
         
+        # Parse video ID
+        imdb_id, season, episode = None, None, None
+        if type == 'series' and ':' in id:
+            parts = id.split(':')
+            imdb_id = parts[0]
+            if len(parts) > 2:
+                season = parts[1]
+                episode = parts[2]
+        else:
+            imdb_id = id
+        
         # Fetch subtitles
-        entries = await subtitle_processor.fetch_subtitles(type, id)
+        entries = await subtitle_processor.fetch_subtitles(type, imdb_id, season, episode)
         
         # Define subtitles handler
         subtitles = []
@@ -266,7 +277,6 @@ async def subtitles(
 
         # Fetch subtitles from OpenSubtitles
         if config.opensubtitles_key:
-            entries = await subtitle_processor.fetch_subtitles(type, id)
             for entry in entries:
                 subtitles.append({
                     "id": f"{entry.start}-{config.lang}",
